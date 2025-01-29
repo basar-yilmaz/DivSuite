@@ -8,12 +8,7 @@ class BaseDiversifier(ABC):
     """
 
     @abstractmethod
-    def diversify(
-        self,
-        items: np.ndarray,
-        top_k: int = 10,
-        **kwargs
-    ) -> np.ndarray:
+    def diversify(self, items: np.ndarray, top_k: int = 10, **kwargs) -> np.ndarray:
         """
         Diversify the given array of items (shape: N x 3, e.g. [id, title, sim_score])
         and return a smaller or reordered array.

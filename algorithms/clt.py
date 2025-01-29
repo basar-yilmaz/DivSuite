@@ -110,7 +110,6 @@ class CLTDiversifier(BaseDiversifier):
         # 5) Return those chosen items
         # Optionally, reorder them by descending relevance, or keep cluster order
         chosen_indices = list(set(chosen_indices))  # ensure unique (should be already)
-        chosen_indices.sort(key=lambda i: items[i, 2], reverse=True)
 
         return items[chosen_indices]
 

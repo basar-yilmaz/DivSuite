@@ -91,9 +91,6 @@ class MotleyDiversifier(BaseDiversifier):
             if all_diverse:
                 R.append(next_s)
 
-        # Sort final indices in descending order of relevance or keep as is
-        R.sort(key=lambda i: relevance(i), reverse=True)
-
         return items[R]
 
     @property

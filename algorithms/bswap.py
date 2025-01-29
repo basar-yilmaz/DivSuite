@@ -141,7 +141,6 @@ class BSwapDiversifier(BaseDiversifier):
 
         # Done. Return R in descending relevance order
         final_indices = list(R)
-        final_indices.sort(key=lambda idx: relevance(idx), reverse=True)
         return items[final_indices]
 
     @property

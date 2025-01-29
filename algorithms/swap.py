@@ -115,7 +115,6 @@ class SwapDiversifier(BaseDiversifier):
 
         # Return the final set in descending relevance order
         final_indices = list(R_set)
-        final_indices.sort(key=lambda idx: items[idx, 2], reverse=True)
         return items[final_indices]
 
     @property
