@@ -1,71 +1,95 @@
-from algorithms.swap import SwapDiversifier
-from algorithms.mmr import MMRDiversifier
-from algorithms.clt import CLTDiversifier
+import pickle
+
 from algorithms.sy import SYDiversifier
-from algorithms.bswap import BSwapDiversifier
 from algorithms.motley import MotleyDiversifier
+from algorithms.mmr import MMRDiversifier
+from algorithms.swap import SwapDiversifier
+from algorithms.sy import SYDiversifier
 from algorithms.msd import MaxSumDiversifier
+from utils import compute_average_ild
 import numpy as np
+from algorithms.base import BaseDiversifier
 
-from logger import get_logger
+def run_diversification(
+    rankings: dict, diversifier: BaseDiversifier, top_k: int = 10
+) -> dict:
+    """
+    Run the diversification algorithm on recommendation titles and return
+    the diversified output as a dictionary with the same structure as the input.
 
-logger = get_logger(__name__, level="INFO")
+    The diversification algorithm expects an np.ndarray with at least three columns:
+      - Column 0: a dummy index representing the original ranking position.
+      - Column 1: the title (string).
+      - Column 2: the relevance score (float).
+
+    Parameters:
+        rankings (dict): Rankings in the form of a dict
+                         {user_id: (titles: [str], relevance_scores: [float]), ...}.
+        diversifier (BaseDiversifier): An instance of a diversification algorithm (e.g., MMRDiversifier).
+        top_k (int): Number of top items to select after diversification.
+
+    Returns:
+        dict: A dictionary where each key is a user_id and the value is a tuple:
+              (diversified_titles: [str], diversified_scores: [float]).
+              The structure matches the undiversified version.
+    """
+    diversified_dict = {}
+
+    for user_id, (titles, relevance_scores) in rankings.items():
+        if len(titles) != len(relevance_scores):
+            raise ValueError(f"User {user_id}: Number of titles and relevance scores do not match.")
+
+        # Create an array with rows: [dummy_index, title, relevance_score]
+        items = np.array(
+            [[i, title, float(relevance_scores[i])] for i, title in enumerate(titles)],
+            dtype=object,
+        )
+
+        # Run the diversification algorithm for this user.
+        diversified_items = diversifier.diversify(items,
+                                                  top_k=top_k
+                                                  )
+
+        # Extract diversified titles and scores (ignore the dummy index column)
+        diversified_titles = diversified_items[:, 1].tolist()
+        diversified_scores = [float(x) for x in diversified_items[:, 2]]
+
+        diversified_dict[user_id] = (diversified_titles, diversified_scores)
+
+    return diversified_dict
 
 
-items = np.array(
-    [
-        ["1", "Inception", 0.95],
-        ["2", "The Matrix", 0.82],
-        ["3", "The Godfather", 0.80],
-        ["4", "Toy Story", 0.68],
-        ["5", "Jurassic Park", 0.65],
-        ["6", "The Shawshank Redemption", 0.57],
-        ["7", "The Dark Knight", 0.55],
-        ["8", "Pulp Fiction", 0.50],
-        ["9", "The Lion King", 0.45],
-        ["10", "The Lord of the Rings", 0.40],
-    ],
-    dtype=object,
-)
+# ----------------------------
+# Example format for running the diversification algorithm.:
+#
+# top-k dictionary:
+# topk_dict = {
+#    "user1": (["title1", "title2", "title3", "title4", "title5"], [0.9, 0.8, 0.7, 0.6, 0.5]),
+#    "user2": (["title1", "title2", "title3", "title4", "title5"], [0.9, 0.8, 0.7, 0.6, 0.5]),
+#    ...
+# }
+# ----------------------------
 
-# Swap Diversifier
-logger.info("Starting Swap Diversification")
-swapper = SwapDiversifier(model_name="all-MiniLM-L6-v2", device="cuda")
-result = swapper.diversify(items, top_k=3, lambda_=0.5)
-logger.info(f"Swap Diversification completed. Results:\n{result}")
+if __name__ == "__main__":
+    # Example top-k dictionary for many users.
+    topk_dict = pickle.load(open("topk_data/ml100k/CMF_topk.pkl", "rb"))
 
-# MMR Diversifier
-logger.info("Starting MMR Diversification")
-mmr = MMRDiversifier(model_name="all-MiniLM-L6-v2", device="cuda")
-result = mmr.diversify(items, top_k=3, lambda_=0.5)
-logger.info(f"MMR Diversification completed. Results:\n{result}")
+    diversifier = SYDiversifier(
+        model_name="all-MiniLM-L6-v2", device="cuda", batch_size=128, threshold=0.1
+    )
 
-# CLT Diversifier
-logger.info("Starting CLT Diversification")
-clt = CLTDiversifier(model_name="all-MiniLM-L6-v2", device="cuda")
-result = clt.diversify(items, top_k=3, pick_strategy="medoid")
-logger.info(f"CLT Diversification completed. Results:\n{result}")
+    # print("Before Diversification:")
+    # # Compute and print the average ILD over all users.
+    # avg_ild = compute_average_ild(topk_dict, diversifier.embedder, topk=3)
+    # print(f"Average ILD: {avg_ild:.4f}")
 
-# SY Diversifier
-logger.info("Starting SY Diversification")
-sy_div = SYDiversifier(model_name="all-MiniLM-L6-v2")
-diverse_items = sy_div.diversify(items, top_k=3, threshold=0.5)
-logger.info(f"SY Diversification completed. Results:\n{diverse_items}")
 
-# BSwap Diversifier
-logger.info("Starting BSwap Diversification")
-bswap = BSwapDiversifier(model_name="all-MiniLM-L6-v2", device="cuda")
-result = bswap.diversify(items, top_k=3, theta=0.6)
-logger.info(f"BSwap Diversification completed. Results:\n{result}")
+    diversified_results = run_diversification(topk_dict, diversifier, top_k=3)
 
-# Motley Diversifier
-logger.info("Starting Motley Diversification")
-motley = MotleyDiversifier(model_name="all-MiniLM-L6-v2", device="cuda")
-result = motley.diversify(items, top_k=3, div_threshold=0.5)
-logger.info(f"Motley Diversification completed. Results:\n{result}")
-
-# MaxSum Diversifier
-logger.info("Starting MaxSum Diversification")
-msd = MaxSumDiversifier(model_name="all-MiniLM-L6-v2", device="cuda")
-result = msd.diversify(items, top_k=3, lambda_=0.67)
-logger.info(f"MaxSum Diversification completed. Results:\n{result}")
+    # Avg num items in top-k
+    avg_num_items = np.mean([len(x[0]) for x in diversified_results.values()])
+    print("After Diversification:")
+    print(f"Avg num items in top-k: {avg_num_items:.4f}")
+    # Compute and print the average ILD over all users.
+    avg_ild = compute_average_ild(diversified_results, diversifier.embedder, topk=3)
+    print(f"Average ILD: {avg_ild:.4f}")
