@@ -12,7 +12,7 @@ class BSwapDiversifier(BaseDiversifier):
 
     Steps (roughly):
       1) R <- empty
-      2) While |R| < k: pick s_s in S with highest relevance, move from S to R
+      2) While |R| < k: pick s_s in S with the highest relevance, move from S to R
       3) s_d <- argmin_{si in R} (divContribution(R, si))
       4) s_s <- argmax_{si in S} (relevance)
       5) while [deltaSim(q, s_d) - deltaSim(q, s_s) <= theta] and |S|>0:
@@ -23,7 +23,8 @@ class BSwapDiversifier(BaseDiversifier):
           S <- S \ {s_s}
     """
 
-    def __init__(self, model_name: str, device: str = "cuda", batch_size: int = 32):
+    def __init__(self, model_name: str, device: str = "cuda", batch_size: int = 32, theta: float = 0.1):
+        self.theta = theta
         self.device = device
         if DEFAULT_EMBEDDER == STEmbedder:
             self.embedder = STEmbedder(
@@ -38,14 +39,11 @@ class BSwapDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape: (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
-        theta: float = 0.1,
         **kwargs,
     ) -> np.ndarray:
         """
         :param items: Nx3 array with columns [id, title, relevance_score].
         :param top_k: result set size k (|R|=k).
-        :param theta: distance threshold in the condition
-                      deltaSim(q, s_d) - deltaSim(q, s_s) <= theta
         :return: A subset of items of size k (or fewer if N < k).
         """
 
@@ -85,7 +83,7 @@ class BSwapDiversifier(BaseDiversifier):
         S = set(range(num_items))
         R = set()
 
-        # 2) While |R| < k, pick s_s from S with highest relevance, move it to R
+        # 2) While |R| < k, pick s_s from S with the highest relevance, move it to R
         while len(R) < top_k and len(S) > 0:
             s_s = max(S, key=lambda idx: relevance(idx))  # highest rel
             S.remove(s_s)
@@ -112,7 +110,7 @@ class BSwapDiversifier(BaseDiversifier):
         S.remove(s_s)
 
         # 5) while deltaSim(q, s_d) - deltaSim(q, s_s) <= theta and |S|>0 do ...
-        while (relevance(s_d) - relevance(s_s) <= theta) and len(S) >= 0:
+        while (relevance(s_d) - relevance(s_s) <= self.theta) and len(S) >= 0:
             # if div( (R \ s_d) U { s_s } ) > div(R) then R = ...
             old_div = diversity_of_set(R)
             R_candidate = set(R)
@@ -135,7 +133,7 @@ class BSwapDiversifier(BaseDiversifier):
             S.remove(s_s)
 
             # re-check the condition
-            if relevance(s_d) - relevance(s_s) > theta:
+            if relevance(s_d) - relevance(s_s) > self.theta:
                 # condition fails => break
                 break
 

@@ -2,3 +2,6 @@ tests/
 test*
 __pycache__/
 *.pyc
+metrics/
+*.pkl
+*.csv

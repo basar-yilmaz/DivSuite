@@ -15,7 +15,9 @@ class SwapDiversifier(BaseDiversifier):
         model_name: str,
         device: str = "cuda",
         batch_size: int = 32,
+        lambda_: float = 0.5,
     ):
+        self.lambda_ = lambda_
         self.device = device
         if DEFAULT_EMBEDDER == STEmbedder:
             self.embedder = STEmbedder(
@@ -30,12 +32,12 @@ class SwapDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3): [id, title, relevance]
         top_k: int = 10,
-        lambda_: float = 0.5,
         **kwargs,
     ) -> np.ndarray:
         """
         :param items: Nx3 array, e.g. [item_id, title, relevance_score]
         :param top_k: desired size of the final diversified set R
+        :param lambda_: trade-off parameter between relevance and diversity
         :return: A subset of 'items' of size top_k (or fewer if items < top_k)
         """
 
@@ -62,7 +64,7 @@ class SwapDiversifier(BaseDiversifier):
 
             # Relevance part
             sum_relevance = float(np.sum(items[R_list, 2].astype(float)))
-            relevance_term = (k - 1) * (1 - lambda_) * sum_relevance
+            relevance_term = (k - 1) * (1 - self.lambda_) * sum_relevance
 
             # Diversity part: sum of (1 - sim) for all pairs
             div_sum = 0.0
@@ -70,7 +72,7 @@ class SwapDiversifier(BaseDiversifier):
                 for j in range(i + 1, k):
                     div_sum += 1.0 - sim_matrix[R_list[i], R_list[j]]
 
-            diversity_term = 2.0 * lambda_ * div_sum
+            diversity_term = 2.0 * self.lambda_ * div_sum
             return relevance_term + diversity_term
 
         # All candidate indices
@@ -83,7 +85,7 @@ class SwapDiversifier(BaseDiversifier):
         S = set(sorted_by_rel)  # unselected candidates
 
         while len(R) < top_k and len(S) > 0:
-            best_s = max(S, key=lambda idx: items[idx, 2])  # pick highest relevance
+            best_s = max(S, key=lambda idx: items[idx, 2])  # pick the highest relevance
             S.remove(best_s)
             R.append(best_s)
 
@@ -91,7 +93,7 @@ class SwapDiversifier(BaseDiversifier):
         R_set = set(R)
 
         while len(S) > 0:
-            # pick next item s_s from S with highest relevance
+            # pick next item s_s from S with the highest relevance
             s_s = max(S, key=lambda idx: items[idx, 2])
             S.remove(s_s)
 

@@ -11,7 +11,9 @@ class MMRDiversifier(BaseDiversifier):
         model_name: str,
         device: str = "cuda",
         batch_size: int = 32,
+        lambda_: float = 0.5,
     ):
+        self.lambda_ = lambda_
         self.device = device
         if DEFAULT_EMBEDDER == STEmbedder:
             self.embedder = STEmbedder(
@@ -23,12 +25,12 @@ class MMRDiversifier(BaseDiversifier):
             )
 
     def diversify(
-        self, items: np.ndarray, top_k: int = 10, lambda_: float = 0.5, **kwargs
+        self, items: np.ndarray, top_k: int = 10, **kwargs
     ) -> np.ndarray:
         if items.shape[0] == 0:
             return items
 
-        if not 0 <= lambda_ <= 1:
+        if not 0 <= self.lambda_ <= 1:
             raise ValueError("lambda_ must be between 0 and 1")
 
         # if top_k is greater than the number of items, set it to the number of items
@@ -37,10 +39,6 @@ class MMRDiversifier(BaseDiversifier):
         # Sort items by relevance
         sorted_idx = np.argsort(items[:, 2].astype(float))[::-1]
         items = items[sorted_idx]
-
-        # Early return no diversification needed
-        if top_k == 1 or lambda_ == 1.0:
-            return items[:top_k]
 
         # Extract titles to encode
         titles = items[:, 1].tolist()
@@ -58,11 +56,11 @@ class MMRDiversifier(BaseDiversifier):
                     continue
 
                 # Relevance term
-                relevance = (1 - lambda_) * float(items[i, 2])
+                relevance = (1 - self.lambda_) * float(items[i, 2])
 
                 # Diversity term
                 diversity_sum = sum((1 - sim_matrix[i, j]) for j in selected_indices)
-                diversity_term = (lambda_ / len(selected_indices)) * diversity_sum
+                diversity_term = (self.lambda_ / len(selected_indices)) * diversity_sum
 
                 # MMR score as per the formula
                 mmr_score = relevance + diversity_term

@@ -22,7 +22,9 @@ class MaxSumDiversifier(BaseDiversifier):
         model_name: str,
         device: str = "cuda",
         batch_size: int = 32,
+        lambda_ : float = 0.5,
     ):
+        self.lambda_ = lambda_
         self.device = device
         if DEFAULT_EMBEDDER == STEmbedder:
             self.embedder = STEmbedder(
@@ -37,7 +39,6 @@ class MaxSumDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
-        lambda_: float = 0.5,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -65,9 +66,9 @@ class MaxSumDiversifier(BaseDiversifier):
             return 1.0 - sim_matrix[i, j]
 
         def msd_score(i, j):
-            return (1 - lambda_) * (
+            return (1 - self.lambda_) * (
                 relevance(i) + relevance(j)
-            ) + 2 * lambda_ * divergence(i, j)
+            ) + 2 * self.lambda_ * divergence(i, j)
 
         # Convert to a set or list for selecting pairs
         S = set(range(n))  # candidate indices

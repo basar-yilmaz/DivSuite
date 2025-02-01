@@ -11,7 +11,7 @@ class MotleyDiversifier(BaseDiversifier):
     Implements the Motley algorithm (Algorithm 5), which:
       1) Picks the highest-relevance item s_s from S, moves it to R
       2) While |R| < k:
-           - pick s_s from S with highest relevance
+           - pick s_s from S with the highest relevance
            - if for all s_r in R, div(s_r, s_s) >= threshold => R <- R + { s_s }
     """
 
@@ -20,7 +20,9 @@ class MotleyDiversifier(BaseDiversifier):
         model_name: str,
         device: str = "cuda",
         batch_size: int = 32,
+        theta_: float = 0.5,
     ):
+        self.theta_ = theta_
         self.device = device
         if DEFAULT_EMBEDDER == STEmbedder:
             self.embedder = STEmbedder(
@@ -35,14 +37,11 @@ class MotleyDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3): [id, title, relevance]
         top_k: int = 10,
-        div_threshold: float = 0.5,  # theta' in the pseudo-code
         **kwargs,
     ) -> np.ndarray:
         """
         :param items: Nx3 array: [item_id, title, relevance_score]
         :param top_k: number of items we want in R
-        :param div_threshold: the threshold θ' for delta_div(s_r, s_s)
-                              (e.g., 1 - cosine_similarity >= div_threshold)
         :return: A subset of items, up to size k, that meets the Motley criterion.
         """
 
@@ -84,7 +83,7 @@ class MotleyDiversifier(BaseDiversifier):
             # check if it's sufficiently diverse from every item in R
             all_diverse = True
             for r_idx in R:
-                if distance(r_idx, next_s) < div_threshold:
+                if distance(r_idx, next_s) < self.theta_:
                     all_diverse = False
                     break
 

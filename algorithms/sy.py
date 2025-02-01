@@ -15,6 +15,7 @@ class SYDiversifier(BaseDiversifier):
     def __init__(
         self,
         model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
+        threshold: float = 0.67,
         device: str = "cuda",
         batch_size: int = 32,
     ):
@@ -23,6 +24,7 @@ class SYDiversifier(BaseDiversifier):
         :param device: 'cpu' or 'cuda'
         :param batch_size: Batch size for embedding generation.
         """
+        self.threshold = threshold
         self.device = device
         if DEFAULT_EMBEDDER == STEmbedder:
             self.embedder = STEmbedder(
@@ -34,14 +36,13 @@ class SYDiversifier(BaseDiversifier):
             )
 
     def diversify(
-        self, items: np.ndarray, top_k: int = 10, threshold: float = 0.5, **kwargs
+        self, items: np.ndarray, top_k: int = 10, **kwargs
     ) -> np.ndarray:
         """
         Diversify the given array of items using the SY algorithm.
 
         :param items: A 2D array of shape (N, 3), e.g., [id, title, relevance_score].
         :param top_k: Number of items to retrieve after diversification.
-        :param threshold: The cosine similarity threshold to consider items as similar.
         :param kwargs: Additional parameters (unused in this implementation).
         :return: A 2D array of shape (top_k, 3), diversified.
         """
@@ -70,7 +71,7 @@ class SYDiversifier(BaseDiversifier):
 
             # Check similarity with all previously selected items
             for j in selected_indices:
-                if sim_matrix[i, j] > threshold:
+                if sim_matrix[i, j] > self.threshold:
                     is_selected = False
                     break
 
