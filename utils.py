@@ -1,6 +1,6 @@
 from typing import Any
-
 import numpy as np
+from sklearn.metrics import ndcg_score, precision_score, recall_score
 from numpy import floating
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -73,3 +73,45 @@ def compute_average_ild(topk_dict: dict, embedder, topk) -> floating[Any]:
         ild_list.append(user_ild)
     avg_ild = np.mean(ild_list)
     return avg_ild
+
+def compute_user_metrics(rec_titles, ground_truth_ids, title_to_id, k=10):
+    """
+    Compute recommendation metrics using scikit-learn.
+    
+    Parameters:
+        rec_titles: List of recommended titles
+        ground_truth_ids: List of ground truth item IDs
+        title_to_id: Dictionary mapping titles to item IDs
+        k: Number of items to consider
+    Returns:
+        tuple: (recall, ndcg, hit_rate, precision)
+    """
+    # Convert recommended titles to corresponding item IDs
+    rec_ids = [title_to_id.get(title) for title in rec_titles][:k]
+    rec_ids = [r for r in rec_ids if r is not None]
+    
+    # Create binary vectors for metrics calculation
+    all_items = list(set(rec_ids + list(ground_truth_ids)))
+    y_true = np.zeros(len(all_items))
+    y_pred = np.zeros(len(all_items))
+    
+    # Fill binary vectors
+    for idx, item in enumerate(all_items):
+        if item in ground_truth_ids:
+            y_true[idx] = 1
+        if item in rec_ids:
+            y_pred[idx] = 1
+    
+    # Calculate metrics using sklearn
+    recall = recall_score(y_true, y_pred, zero_division=0)
+    precision = precision_score(y_true, y_pred, zero_division=0)
+    
+    # Calculate NDCG using sklearn
+    relevance = np.array([[1 if r in ground_truth_ids else 0 for r in rec_ids]])
+    ideal_relevance = np.sort(relevance, axis=1)[:, ::-1]
+    ndcg = ndcg_score(ideal_relevance, relevance)
+    
+    # Calculate Hit Rate (still manual as sklearn doesn't have direct equivalent)
+    hit_rate = 1 if any(r in ground_truth_ids for r in rec_ids) else 0
+    
+    return recall, ndcg, hit_rate, precision
