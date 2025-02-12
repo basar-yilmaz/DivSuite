@@ -1,17 +1,18 @@
 import pickle
-import pandas as pd
 import numpy as np
-import ast
+
 
 from algorithms.bswap import BSwapDiversifier
 from algorithms.base import BaseDiversifier
 
-from utils import compute_average_ild, compute_user_metrics
+from utils import (
+    compute_average_ild_batched,
+    evaluate_recommendation_metrics,
+    load_data_and_convert,
+    precompute_title_embeddings,
+)
 
 
-# ------------------------------------------
-# 1. Diversification Pipeline
-# ------------------------------------------
 def run_diversification(
     rankings: dict, diversifier: BaseDiversifier, top_k: int = 10
 ) -> dict:
@@ -29,6 +30,9 @@ def run_diversification(
     """
     diversified_dict = {}
 
+    # Precompute embeddings for all unique titles
+    title2embedding = precompute_title_embeddings(rankings, diversifier.embedder)
+
     for user_id, (titles, relevance_scores) in rankings.items():
         if len(titles) != len(relevance_scores):
             raise ValueError(
@@ -41,8 +45,10 @@ def run_diversification(
             dtype=object,
         )
 
-        # Run the diversification algorithm for this user.
-        diversified_items = diversifier.diversify(items, top_k=top_k)
+        # Run diversification using precomputed embeddings.
+        diversified_items = diversifier.diversify(
+            items, top_k=top_k, title2embedding=title2embedding
+        )
 
         # Extract diversified titles and scores (ignore the dummy index column)
         diversified_titles = diversified_items[:, 1].tolist()
@@ -53,164 +59,105 @@ def run_diversification(
     return diversified_dict
 
 
-# ------------------------------------------
-# 2. Data Loading Utilities
-# ------------------------------------------
-def load_item_mapping(csv_path: str):
+def get_positive_index(data, item_title):
     """
-    Load the item mapping CSV and create two dictionaries:
-      - id_to_title: mapping from item ID to item title.
-      - title_to_id: reverse mapping from title to item ID.
+    Get the index of the positive item in the list of items.
+    Returns -1 if the item is not found.
     """
-    mapping_df = pd.read_csv(csv_path)  # Expected columns: item_id, item
-    id_to_title = dict(zip(mapping_df["item_id"], mapping_df["item"]))
-    title_to_id = {title: item_id for item_id, title in id_to_title.items()}
-    return id_to_title, title_to_id
+    try:
+        return data.index(item_title)
+    except ValueError:
+        return -1
 
 
-def load_ground_truth(csv_path: str) -> dict:
+def create_relevance_lists(data: dict, pos_items: list) -> list:
     """
-    Load ground truth positive items for each user.
-    Expects a CSV with columns: user_id, positive_item, where positive_item is a stringified list.
-    Returns:
-        dict: {user_id: set(positive_item_ids), ...}
+    Data is in the format of :
+    {user_id: (titles: [str], relevance_scores: [float]), ...}
+    pos_items is a list of positive items for each user.
+    such that
+    pos_items[user_id-1] = positive_item_title
+
+    Returns a list of binary relevance lists where 1 indicates the positive item.
+    If the positive item is not found in the titles, returns a list of zeros.
     """
-    gt_df = pd.read_csv(csv_path)
-    ground_truth = {}
-    for _, row in gt_df.iterrows():
-        user = row["user_id"]
-        pos_items = ast.literal_eval(row["positive_item"])
-        ground_truth[user] = set(pos_items)
-    return ground_truth
+    relevance_lists = []
+    for user_id, (titles, relevance_scores) in data.items():
+        pos_index = get_positive_index(titles, pos_items[user_id - 1])
+        relevance_list = [0] * len(titles)
+        if pos_index != -1:
+            relevance_list[pos_index] = 1
+        relevance_lists.append(relevance_list)
+    return relevance_lists
 
 
-def preprocess_topk_lists(topk_dict: dict, ground_truth: dict, n: int = 5):
-    """
-    Preprocess the top-k lists to ensure user has more than n positive items.
-    """
-    filtered_topk_dict = {}
-    for user_id, (rec_titles, rel_scores) in topk_dict.items():
-        gt_ids = ground_truth.get(user_id, set())
-        if len(gt_ids) > n:
-            filtered_topk_dict[user_id] = (rec_titles, rel_scores)
-    return filtered_topk_dict
-
-
-# ------------------------------------------
-# 3. Metric Computation Utility for Recall, NDCG, and Hit Rate
-# ------------------------------------------
-def compute_metrics(
-    diversified_results: dict, ground_truth: dict, title_to_id: dict, k: int = 10
-):
-    """
-    Compute the average Recall@K, NDCG@K, and Hit Rate@K across all users.
-
-    Parameters:
-        diversified_results (dict): {user_id: (list_of_titles, list_of_scores), ...}
-        ground_truth (dict): {user_id: set(positive_item_ids), ...}
-        title_to_id (dict): Mapping from item title to item id.
-        k (int): Top-k cutoff for the metrics.
-
-    Returns:
-        tuple: (avg_recall, avg_ndcg, avg_hit_rate)
-    """
-    all_recalls, all_ndcgs, all_hits, all_precision = [], [], [], []
-
-    for user_id, (rec_titles, _) in diversified_results.items():
-        gt_ids = ground_truth.get(user_id, set())
-        recall, ndcg, hit, precision = compute_user_metrics(
-            rec_titles, gt_ids, title_to_id, k=k
-        )
-        all_recalls.append(recall)
-        all_ndcgs.append(ndcg)
-        all_hits.append(hit)
-        all_precision.append(precision)
-
-    avg_recall = np.mean(all_recalls, dtype=np.float64)
-    avg_ndcg = np.mean(all_ndcgs, dtype=np.float64)
-    avg_hit_rate = np.mean(all_hits, dtype=np.float64)
-    avg_precision = np.mean(all_precision, dtype=np.float64)
-    return avg_recall, avg_ndcg, avg_hit_rate, avg_precision
-
-
-# ------------------------------------------
-# 4. Main Function
-# Assuming diversified_results is your dictionary with user recommendations
-# Format: { user_id: (list_of_titles, list_of_scores), ... }
-# For example:
-# diversified_results = {
-#     1: (['Scout, The (1994)'], [2.1710939407348633]),
-#     2: (['Scout, The (1994)'], [2.1220200061798096]),
-#     3: (["Devil's Own, The (1997)", "Umbrellas of Cherbourg, The (Parapluies de Cherbourg, Les) (1964)"], [1.93, 1.68]),
-#     ...
-# }
-# ------------------------------------------
 def main():
-    # Define paths
-    data_path = "topk_data/ml100k"
-    topk_file = f"{data_path}/CMF_top100.pkl"
-    mapping_file = f"{data_path}/target_item_id_mapping.csv"
-    ground_truth_file = f"{data_path}/uid2positive_item.csv"
-    k = 10
+    data_path = "topk_data/amazon14"
+    item_mappings = f"{data_path}/final.csv"
+    test_samples = f"{data_path}/amz_14_final_samples.csv"
 
-    # Load item mapping and ground truth for top-k metrics
-    _, title_to_id = load_item_mapping(mapping_file)
-    ground_truth = load_ground_truth(ground_truth_file)
+    # The converted data is in the form of:
+    # [[pos_item, neg_item1, neg_item2, ...], ...] for the user_id=1 the list index is 0.
+    converted_data = load_data_and_convert(test_samples, item_mappings)
 
-    # Load the top-k recommendations (dictionary)
-    topk_dict = pickle.load(open(topk_file, "rb"))
+    # Extract pos items for each user from the converted data
+    pos_items = [x[0] for x in converted_data]
 
-    print("Before diversification and preprocess:")
+    # Load ranked top100 items
+    # shape = [num_users, 100]. The value of 0 is the positive item.
+    topk_list = pickle.load(open("topk_data/amazon14/amz-topk_iid_list.pkl", "rb"))
+    topk_scores = pickle.load(open("topk_data/amazon14/amz-topk_score.pkl", "rb"))
 
-    # Compute Recall, NDCG, and Hit Rate
-    avg_recall, avg_ndcg, avg_hit_rate, avg_precision = compute_metrics(
-        topk_dict, ground_truth, title_to_id, k=k
+    # For each user, convert indices to item titles
+    rankings = {}
+    for idx, (items, scores) in enumerate(zip(topk_list, topk_scores)):
+        user_id = idx + 1
+        titles = [converted_data[idx][item] for item in items]
+        rankings[user_id] = (titles, scores.tolist())
+
+    # Get the relevance lists
+    relevance_lists = create_relevance_lists(rankings, pos_items)
+
+    mean_prec, mean_rec, mean_hit, mean_ndcg = evaluate_recommendation_metrics(
+        relevance_lists, 10
     )
-    print(f"NDCG@{k}: {avg_ndcg:.4f}")
-    print(f"Recall@{k}: {avg_recall:.4f}")
-    print(f"Precision@{k}: {avg_precision:.4f}")
-    print(f"Hit Rate@{k}: {avg_hit_rate:.4f}")
 
-    # Preprocess the top-k lists to ensure user has more than n positive items
-    topk_dict = preprocess_topk_lists(topk_dict, ground_truth, n=5)
-
-    # Initialize the diversifier (using BSwapDiversifier as an example)
+    # Init the diversifier
     diversifier = BSwapDiversifier(
-        model_name="all-MiniLM-L6-v2", device="cuda", batch_size=128, theta=0.7
+        model_name="all-MiniLM-L6-v2", device="cuda", batch_size=40960, theta=0.7
     )
+
+    # Compute ILD for the top-10 recommendations
+    avg_ild = compute_average_ild_batched(rankings, diversifier.embedder, topk=10)
 
     print("Before diversification:")
-
-    avg_ild = compute_average_ild(topk_dict, diversifier.embedder, topk=10)
-    print(f"ILD@{k}: {avg_ild:.4f}")
-    # Compute Recall, NDCG, and Hit Rate
-    avg_recall, avg_ndcg, avg_hit_rate, avg_precision = compute_metrics(
-        topk_dict, ground_truth, title_to_id, k=k
-    )
-    print(f"NDCG@{k}: {avg_ndcg:.4f}")
-    print(f"Recall@{k}: {avg_recall:.4f}")
-    print(f"Precision@{k}: {avg_precision:.4f}")
-    print(f"Hit Rate@{k}: {avg_hit_rate:.4f}")
+    print(f"ILD@10: {avg_ild:.4f}")
+    print(f"NDCG@10: {mean_ndcg:.4f}")
+    print(f"Hit@10: {mean_hit:.4f}")
+    print(f"Recall@10: {mean_rec:.4f}")
+    print(f"Precision@10: {mean_prec:.4f}")
 
     # Run diversification
-    diversified_results = run_diversification(topk_dict, diversifier, top_k=10)
+    diversified_results = run_diversification(rankings, diversifier, top_k=10)
 
-    # Average num of items in the diversified results
-    avg_num_items = np.mean([len(x[0]) for x in diversified_results.values()])
-    print(f"Average number of items in diversified results: {avg_num_items:.2f}")
+    # Get the relevance lists
+    relevance_lists = create_relevance_lists(diversified_results, pos_items)
+
+    mean_prec, mean_rec, mean_hit, mean_ndcg = evaluate_recommendation_metrics(
+        relevance_lists, 10
+    )
+
+    # Compute ILD for the top-10 recommendations
+    avg_ild = compute_average_ild_batched(
+        diversified_results, diversifier.embedder, topk=10
+    )
 
     print("After diversification:")
-    avg_ild = compute_average_ild(diversified_results, diversifier.embedder, topk=10)
-    print(f"ILD@{k}: {avg_ild:.4f}")
-
-    # Compute Recall, NDCG, and Hit Rate
-    avg_recall, avg_ndcg, avg_hit_rate, avg_precision = compute_metrics(
-        diversified_results, ground_truth, title_to_id, k=k
-    )
-    print(f"NDCG@{k}: {avg_ndcg:.4f}")
-    print(f"Recall@{k}: {avg_recall:.4f}")
-    print(f"Precision@{k}: {avg_precision:.4f}")
-    print(f"Hit Rate@{k}: {avg_hit_rate:.4f}")
+    print(f"ILD@10: {avg_ild:.4f}")
+    print(f"NDCG@10: {mean_ndcg:.4f}")
+    print(f"Hit@10: {mean_hit:.4f}")
+    print(f"Recall@10: {mean_rec:.4f}")
+    print(f"Precision@10: {mean_prec:.4f}")
 
 
 if __name__ == "__main__":

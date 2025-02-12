@@ -1,6 +1,7 @@
 from sentence_transformers import SentenceTransformer
 import numpy as np
 from typing import List
+
 from embedders.base_embedder import BaseEmbedder
 from logger import get_logger
 
@@ -38,11 +39,11 @@ class STEmbedder(BaseEmbedder):
         logger.debug(
             f"Encoding batch of {len(texts)} texts with batch_size={self.batch_size}"
         )
-        embeddings = self.model.encode(
-            texts,
-            batch_size=self.batch_size,
-            convert_to_numpy=True,
-            show_progress_bar=False,
+        self.pool = self.model.start_multi_process_pool()
+        embeddings = self.model.encode_multi_process(
+            texts, self.pool, batch_size=self.batch_size, show_progress_bar=True
         )
+        self.model.stop_multi_process_pool(self.pool)
+
         logger.debug(f"Generated embeddings with shape {embeddings.shape}")
         return embeddings
