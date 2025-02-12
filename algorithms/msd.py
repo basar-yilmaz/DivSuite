@@ -1,9 +1,7 @@
 import numpy as np
 from algorithms.base import BaseDiversifier
 from utils import compute_pairwise_cosine
-from embedders.ste_embedder import STEmbedder
-from embedders.hf_embedder import HFEmbedder
-from config import DEFAULT_EMBEDDER
+from embedders.base_embedder import BaseEmbedder
 
 
 class MaxSumDiversifier(BaseDiversifier):
@@ -19,21 +17,11 @@ class MaxSumDiversifier(BaseDiversifier):
 
     def __init__(
         self,
-        model_name: str,
-        device: str = "cuda",
-        batch_size: int = 32,
-        lambda_ : float = 0.5,
+        embedder: BaseEmbedder,
+        lambda_: float = 0.5,
     ):
         self.lambda_ = lambda_
-        self.device = device
-        if DEFAULT_EMBEDDER == STEmbedder:
-            self.embedder = STEmbedder(
-                model_name=model_name, device=device, batch_size=batch_size
-            )
-        else:
-            self.embedder = HFEmbedder(
-                model_name=model_name, device=device, max_chunk_size=batch_size
-            )
+        self.embedder = embedder
 
     def diversify(
         self,
@@ -117,7 +105,3 @@ class MaxSumDiversifier(BaseDiversifier):
                 S.remove(extra)
 
         return items[R]
-
-    @property
-    def embedder_type(self) -> str:
-        return "STEmbedder" if isinstance(self.embedder, STEmbedder) else "HFEmbedder"

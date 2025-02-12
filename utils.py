@@ -68,7 +68,9 @@ def load_data_and_convert(data_csv_path, mapping_csv_path):
     return results
 
 
-def compute_average_ild_batched(topk_dict: dict, embedder, topk: int = 5) -> float:
+def compute_average_ild_batched(
+    topk_dict: dict, embedder, topk: int = 5, precomputed_embeddings: dict = None
+) -> float:
     """
     Compute the average Intra-List Diversity (ILD) over all users using batch embedding computation.
 
@@ -80,6 +82,8 @@ def compute_average_ild_batched(topk_dict: dict, embedder, topk: int = 5) -> flo
                           (titles: [str], relevance_scores: [float]).
         embedder: An instance with an encode_batch(list_of_titles) method.
         topk (int): The number of recommendations to consider per user.
+        precomputed_embeddings (dict, optional): A mapping from title (str) to its embedding (np.ndarray).
+            If provided, these embeddings will be used instead of computing them from scratch.
 
     Returns:
         float: The average ILD value over all users.
@@ -90,11 +94,11 @@ def compute_average_ild_batched(topk_dict: dict, embedder, topk: int = 5) -> flo
     current_index = 0
 
     for user, value in topk_dict.items():
-        # Check if the value is a tuple (titles, relevance_scores)
+        # Extract titles from the tuple (titles, relevance_scores) or directly if not a tuple.
         if isinstance(value, tuple) and len(value) >= 1:
-            titles = value[0]  # Extract the list of titles.
+            titles = value[0]
         else:
-            titles = value  # In case it's just a list of titles.
+            titles = value
 
         # Only take the top-k titles for this user.
         current_titles = titles[: min(topk, len(titles))]
@@ -102,10 +106,17 @@ def compute_average_ild_batched(topk_dict: dict, embedder, topk: int = 5) -> flo
         user_indices[user] = (current_index, current_index + len(current_titles))
         current_index += len(current_titles)
 
-    # Step 2: Compute embeddings for all titles in one batch.
-    all_embeddings = embedder.encode_batch(
-        all_titles
-    )  # Expecting a NumPy array of shape (N, D)
+    # Step 2: Compute or retrieve embeddings for all titles in one batch.
+    if precomputed_embeddings is not None:
+        # Use the provided precomputed embeddings.
+        all_embeddings = np.array(
+            [precomputed_embeddings[title] for title in all_titles]
+        )
+    else:
+        # Compute embeddings using the embedder.
+        all_embeddings = embedder.encode_batch(
+            all_titles
+        )  # Expecting a NumPy array of shape (N, D)
 
     # Step 3: For each user, extract their embeddings and compute ILD.
     ild_list = []
@@ -116,12 +127,12 @@ def compute_average_ild_batched(topk_dict: dict, embedder, topk: int = 5) -> flo
             ild_list.append(0.0)
             continue
 
-        # Compute the pairwise cosine similarity matrix in a vectorized manner.
+        # Compute the pairwise cosine similarity matrix.
         sim_matrix = cosine_similarity(user_embeddings)
-        # Convert similarity to dissimilarity (distance)
+        # Convert similarity to dissimilarity (distance).
         dist_matrix = 1 - sim_matrix
 
-        # Get the indices for the upper triangle (excluding the diagonal)
+        # Get the indices for the upper triangle (excluding the diagonal).
         iu = np.triu_indices(n, k=1)
         # Compute the average pairwise dissimilarity.
         ild = np.mean(dist_matrix[iu])
@@ -212,3 +223,48 @@ def precompute_title_embeddings(rankings: dict, embedder) -> dict:
 
     # Return a mapping from title to embedding.
     return dict(zip(unique_titles, embeddings))
+
+
+def get_positive_index(data, item_title):
+    """
+    Get the index of the positive item in the list of items.
+    Returns -1 if the item is not found.
+    """
+    try:
+        return data.index(item_title)
+    except ValueError:
+        return -1
+
+
+def create_relevance_lists(data: dict, pos_items: list) -> list:
+    """
+    Data is in the format of :
+    {user_id: (titles: [str], relevance_scores: [float]), ...}
+    pos_items is a list of positive items for each user.
+    such that
+    pos_items[user_id-1] = positive_item_title
+
+    Returns a list of binary relevance lists where 1 indicates the positive item.
+    If the positive item is not found in the titles, returns a list of zeros.
+    """
+    relevance_lists = []
+    for user_id, (titles, relevance_scores) in data.items():
+        pos_index = get_positive_index(titles, pos_items[user_id - 1])
+        relevance_list = [0] * len(titles)
+        if pos_index != -1:
+            relevance_list[pos_index] = 1
+        relevance_lists.append(relevance_list)
+    return relevance_lists
+
+
+def compute_pairwise_cosine(embeddings):
+    """
+    Compute the pairwise cosine similarity matrix for a set of embeddings.
+    """
+    # Normalize the embeddings to unit length.
+    norm = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    embeddings_normalized = embeddings / norm
+
+    # Compute the cosine similarity matrix.
+    sim_matrix = embeddings_normalized @ embeddings_normalized.T
+    return sim_matrix
