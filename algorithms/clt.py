@@ -30,6 +30,7 @@ class CLTDiversifier(BaseDiversifier):
         items: np.ndarray,  # shape (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
         pick_strategy: str = "medoid",  # or "highest_relevance"
+        title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -51,7 +52,15 @@ class CLTDiversifier(BaseDiversifier):
 
         # 1) Embed items
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)  # shape (N, embed_dim)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
 
         # 2) Build a distance matrix = 1 - cosine_similarity
         sim_matrix = compute_pairwise_cosine(embeddings)

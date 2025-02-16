@@ -13,7 +13,9 @@ class MMRDiversifier(BaseDiversifier):
         self.lambda_ = lambda_
         self.embedder = embedder
 
-    def diversify(self, items: np.ndarray, top_k: int = 10, **kwargs) -> np.ndarray:
+    def diversify(
+        self, items: np.ndarray, title2embedding: dict = None, top_k: int = 10, **kwargs
+    ) -> np.ndarray:
         if items.shape[0] == 0:
             return items
 
@@ -29,7 +31,15 @@ class MMRDiversifier(BaseDiversifier):
 
         # Extract titles to encode
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)  # N x N
 
         selected_indices = [0]  # Pick the most relevant item

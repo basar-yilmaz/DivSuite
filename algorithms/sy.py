@@ -18,7 +18,9 @@ class SYDiversifier(BaseDiversifier):
         self.threshold = threshold
         self.embedder = embedder
 
-    def diversify(self, items: np.ndarray, top_k: int = 10, **kwargs) -> np.ndarray:
+    def diversify(
+        self, items: np.ndarray, top_k: int = 10, title2embedding: dict = None, **kwargs
+    ) -> np.ndarray:
         """
         Diversify the given array of items using the SY algorithm.
 
@@ -40,7 +42,15 @@ class SYDiversifier(BaseDiversifier):
 
         # Extract titles to embed
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)
 
         selected_indices = [0]

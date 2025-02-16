@@ -21,6 +21,7 @@ class SwapDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3): [id, title, relevance]
         top_k: int = 10,
+        title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -39,7 +40,15 @@ class SwapDiversifier(BaseDiversifier):
 
         # Compute embeddings & similarity
         titles = items[:, 1].tolist()  # item text
-        embeddings = self.embedder.encode_batch(titles)  # (N, embedding_dim)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)  # (N, N) in [0,1]
 
         # Helper function to compute F(q, R') for a given set of indices

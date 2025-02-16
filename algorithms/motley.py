@@ -25,6 +25,7 @@ class MotleyDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3): [id, title, relevance]
         top_k: int = 10,
+        title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -42,7 +43,15 @@ class MotleyDiversifier(BaseDiversifier):
 
         # 1) Embed items to compute pairwise similarity => from that, we get distances
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)  # (N, dim)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)  # NxN
 
         # distance(i,j) = 1 - sim_matrix[i,j]

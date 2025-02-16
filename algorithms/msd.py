@@ -27,6 +27,7 @@ class MaxSumDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
+        title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -44,7 +45,15 @@ class MaxSumDiversifier(BaseDiversifier):
 
         # Embed items & compute NxN similarity
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)  # NxN in [0,1]
 
         def relevance(i):
