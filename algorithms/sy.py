@@ -1,9 +1,7 @@
 import numpy as np
 from algorithms.base import BaseDiversifier
 from utils import compute_pairwise_cosine
-from embedders.ste_embedder import STEmbedder
-from embedders.hf_embedder import HFEmbedder
-from config import DEFAULT_EMBEDDER
+from embedders.base_embedder import BaseEmbedder
 
 
 class SYDiversifier(BaseDiversifier):
@@ -12,31 +10,16 @@ class SYDiversifier(BaseDiversifier):
     This algorithm eliminates items that is too similar to the previous items incrementally.
     """
 
-    def __init__(
-        self,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
-        threshold: float = 0.67,
-        device: str = "cuda",
-        batch_size: int = 32,
-    ):
+    def __init__(self, embedder: BaseEmbedder, threshold: float = 0.67):
         """
-        :param model_name: Hugging Face or SentenceTransformers model name.
-        :param device: 'cpu' or 'cuda'
-        :param batch_size: Batch size for embedding generation.
+        :param embedder: An embedder instance (e.g. STEmbedder or HFEmbedder)
+        :param threshold: Similarity threshold.
         """
         self.threshold = threshold
-        self.device = device
-        if DEFAULT_EMBEDDER == STEmbedder:
-            self.embedder = STEmbedder(
-                model_name=model_name, device=device, batch_size=batch_size
-            )
-        else:
-            self.embedder = HFEmbedder(
-                model_name=model_name, device=device, max_chunk_size=batch_size
-            )
+        self.embedder = embedder
 
     def diversify(
-        self, items: np.ndarray, top_k: int = 10, **kwargs
+        self, items: np.ndarray, top_k: int = 10, title2embedding: dict = None, **kwargs
     ) -> np.ndarray:
         """
         Diversify the given array of items using the SY algorithm.
@@ -59,7 +42,15 @@ class SYDiversifier(BaseDiversifier):
 
         # Extract titles to embed
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)
 
         selected_indices = [0]
@@ -83,7 +74,3 @@ class SYDiversifier(BaseDiversifier):
                 break
 
         return items[selected_indices]
-
-    @property
-    def embedder_type(self) -> str:
-        return "STEmbedder" if isinstance(self.embedder, STEmbedder) else "HFEmbedder"

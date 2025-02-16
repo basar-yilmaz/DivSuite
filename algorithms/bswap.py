@@ -1,9 +1,7 @@
 import numpy as np
 from algorithms.base import BaseDiversifier
 from utils import compute_pairwise_cosine
-from embedders.ste_embedder import STEmbedder
-from embedders.hf_embedder import HFEmbedder
-from config import DEFAULT_EMBEDDER
+from embedders.base_embedder import BaseEmbedder
 
 
 class BSwapDiversifier(BaseDiversifier):
@@ -23,22 +21,19 @@ class BSwapDiversifier(BaseDiversifier):
           S <- S \ {s_s}
     """
 
-    def __init__(self, model_name: str, device: str = "cuda", batch_size: int = 32, theta: float = 0.1):
+    def __init__(
+        self,
+        embedder: BaseEmbedder,
+        theta: float = 0.1,
+    ):
         self.theta = theta
-        self.device = device
-        if DEFAULT_EMBEDDER == STEmbedder:
-            self.embedder = STEmbedder(
-                model_name=model_name, device=device, batch_size=batch_size
-            )
-        else:
-            self.embedder = HFEmbedder(
-                model_name=model_name, device=device, max_chunk_size=batch_size
-            )
+        self.embedder = embedder
 
     def diversify(
         self,
         items: np.ndarray,  # shape: (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
+        title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -54,7 +49,15 @@ class BSwapDiversifier(BaseDiversifier):
 
         # 1) Embed items & build similarity matrix
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
         sim_matrix = compute_pairwise_cosine(embeddings)  # NxN in [0,1]
 
         # We treat items[i,2] as the "relevance" = δsim(q, s_i)
@@ -140,10 +143,3 @@ class BSwapDiversifier(BaseDiversifier):
         # Done. Return R in descending relevance order
         final_indices = list(R)
         return items[final_indices]
-
-    @property
-    def embedder_type(self) -> str:
-        if isinstance(self.embedder, STEmbedder):
-            return "STEmbedder"
-        else:
-            return "HFEmbedder"

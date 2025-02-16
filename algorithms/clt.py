@@ -1,11 +1,8 @@
 import numpy as np
 from algorithms.base import BaseDiversifier
 from utils import compute_pairwise_cosine
-from embedders.ste_embedder import STEmbedder
-from embedders.hf_embedder import HFEmbedder
+from embedders.base_embedder import BaseEmbedder
 from sklearn_extra.cluster import KMedoids
-
-DEFAULT_EMBEDDER = STEmbedder
 
 
 class CLTDiversifier(BaseDiversifier):
@@ -19,30 +16,21 @@ class CLTDiversifier(BaseDiversifier):
 
     def __init__(
         self,
-        model_name: str = "sentence-transformers/all-MiniLM-L6-v2",
-        device: str = "cuda",
-        batch_size: int = 32,
+        embedder: BaseEmbedder,
     ):
         """
         :param model_name: Hugging Face or SentenceTransformers model name.
         :param device: 'cpu' or 'cuda'
         :param batch_size: batch size for embedding (depending on embedder).
         """
-        self.device = device
-        if DEFAULT_EMBEDDER == STEmbedder:
-            self.embedder = STEmbedder(
-                model_name=model_name, device=device, batch_size=batch_size
-            )
-        else:
-            self.embedder = HFEmbedder(
-                model_name=model_name, device=device, max_chunk_size=batch_size
-            )
+        self.embedder = embedder
 
     def diversify(
         self,
         items: np.ndarray,  # shape (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
         pick_strategy: str = "medoid",  # or "highest_relevance"
+        title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -64,7 +52,15 @@ class CLTDiversifier(BaseDiversifier):
 
         # 1) Embed items
         titles = items[:, 1].tolist()
-        embeddings = self.embedder.encode_batch(titles)  # shape (N, embed_dim)
+        if title2embedding is not None:
+            # Use precomputed embeddings.
+            try:
+                embeddings = np.stack([title2embedding[title] for title in titles])
+            except KeyError as e:
+                raise ValueError(f"Missing embedding for title: {e}")
+        else:
+            # Fall back to computing embeddings on the fly.
+            embeddings = self.embedder.encode_batch(titles)
 
         # 2) Build a distance matrix = 1 - cosine_similarity
         sim_matrix = compute_pairwise_cosine(embeddings)
@@ -112,7 +108,3 @@ class CLTDiversifier(BaseDiversifier):
         chosen_indices = list(set(chosen_indices))  # ensure unique (should be already)
 
         return items[chosen_indices]
-
-    @property
-    def embedder_type(self) -> str:
-        return "STEmbedder" if isinstance(self.embedder, STEmbedder) else "HFEmbedder"
