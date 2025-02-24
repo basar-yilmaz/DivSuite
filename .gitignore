@@ -6,3 +6,5 @@ metrics/
 *.pkl
 *.csv
 topk_data/
+results_*
+.cursor/

@@ -37,36 +37,92 @@ topk_data/amazon14/
 ## Configuration
 
 The experiment can be configured through:
-1. YAML configuration file (`config.yaml`)
+1. YAML configuration file (`config.yaml` or custom config files in `configs/`)
 2. Command-line arguments (override YAML settings)
 
 ### YAML Configuration
 
+There are two ways to configure the experiments:
+
+1. **Single Algorithm Configuration** (`config.yaml`):
 ```yaml
 # Data paths
 data:
-  base_path: "topk_data/amazon14"
+  base_path: "topk_data/amazon14"  # or "topk_data/movielens"
   item_mappings: "target_item_mapping.csv"
-  test_samples: "amz_14_final_samples.csv"
-  topk_list: "amz-topk_iid_list.pkl"
-  topk_scores: "amz-topk_score.pkl"
+  test_samples: "test_samples.csv"
+  topk_list: "topk_iid_list.pkl"
+  topk_scores: "topk_score.pkl"
+  movie_categories: "movie_categories.csv"  # Optional: only for category-based ILD
 
 # Embedder settings
 embedder:
   model_name: "all-MiniLM-L6-v2"
-  device: "cuda"
+  device: "cuda"  # or "cpu"
   batch_size: 40960
 
 # Experiment parameters
 experiment:
-  diversifier: "motley"  # Options: motley, mmr, bswap, clt, msd, swap, sy
-  param_name: "theta_"   # Auto-set based on diversifier if not specified
-  param_start: 0.0
-  param_end: 1.0
-  param_step: 0.05
-  threshold_drop: 0.01   # Stop when NDCG drops by this percentage
+  diversifier: "sy"  # Options: motley, mmr, bswap, clt, msd, swap, sy
+  param_name: "threshold"   # Auto-set based on diversifier if not specified
+  param_start: 1.0
+  param_end: 0.0
+  param_step: -0.05
+  threshold_drop: 0.1   # Stop when NDCG drops by this percentage
   top_k: 10
+  use_category_ild: true  # Optional: enable category-based ILD metric
 ```
+
+2. **Multi-Algorithm Configuration** (`configs/config_samples.yaml`):
+```yaml
+# Data and embedder settings same as above...
+
+# Algorithm-specific configurations
+algorithms:
+  motley:
+    param_name: "theta_"
+    param_start: 0.0
+    param_end: 1.0
+    param_step: 0.05
+    threshold_drop: 0.01
+    top_k: 10
+
+  mmr:
+    param_name: "lambda_"
+    param_start: 0.0
+    param_end: 1.0
+    param_step: 0.05
+    threshold_drop: 0.01
+    top_k: 10
+
+  # ... other algorithms ...
+```
+
+### Algorithm Parameters
+
+Each diversification algorithm has specific parameters:
+
+- **Motley**: Uses `theta_` parameter (0.0 to 1.0)
+  - Higher values prioritize diversity over relevance
+  
+- **MMR**: Uses `lambda_` parameter (0.0 to 1.0)
+  - Higher values prioritize relevance over diversity
+  
+- **BSwap**: Uses `theta_` parameter (0.0 to 1.0)
+  - Higher values increase diversity threshold for swaps
+  
+- **CLT**: Uses `lambda_` parameter (0.0 to 1.0)
+  - Higher values prioritize relevance over diversity
+  - Additional option: `pick_strategy` ("medoid" or "highest_relevance")
+  
+- **MaxSum (MSD)**: Uses `lambda_` parameter (0.0 to 1.0)
+  - Higher values prioritize relevance over diversity
+  
+- **Swap**: Uses `theta_` parameter (0.0 to 1.0)
+  - Higher values increase diversity threshold for swaps
+  
+- **SY**: Uses `threshold` parameter (1.0 to 0.0, decreasing)
+  - Lower values increase diversity threshold
 
 ### Command-line Arguments
 
@@ -78,9 +134,26 @@ python main.py --diversifier mmr --param_start 0.2 --param_end 0.8  # Override s
 ```
 
 Available arguments:
-- Data paths: `--data_path`, `--item_mappings`, `--test_samples`, `--topk_list`, `--topk_scores`
+- Data paths: `--data_path`, `--item_mappings`, `--test_samples`, `--topk_list`, `--topk_scores`, `--movie_categories`
 - Embedder: `--model_name`, `--device`, `--batch_size`
-- Experiment: `--diversifier`, `--param_name`, `--param_start`, `--param_end`, `--param_step`, `--threshold_drop`, `--top_k`
+- Experiment: `--diversifier`, `--param_name`, `--param_start`, `--param_end`, `--param_step`, `--threshold_drop`, `--top_k`, `--use_category_ild`
+
+### When to Use What
+
+1. Use `config.yaml` when:
+   - Running experiments with a single algorithm
+   - Quick testing or parameter tuning
+   - Need to enable/disable category-based ILD
+
+2. Use `configs/config_samples.yaml` when:
+   - Running experiments with multiple algorithms
+   - Need different parameter ranges for each algorithm
+   - Batch processing multiple diversification strategies
+
+3. Use command-line arguments when:
+   - Quick parameter overrides without editing config files
+   - Running experiments in scripts/loops
+   - CI/CD pipelines
 
 ## Output
 

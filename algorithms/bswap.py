@@ -24,9 +24,9 @@ class BSwapDiversifier(BaseDiversifier):
     def __init__(
         self,
         embedder: BaseEmbedder,
-        theta: float = 0.1,
+        theta_: float = 0.1,
     ):
-        self.theta = theta
+        self.theta = theta_
         self.embedder = embedder
 
     def diversify(

@@ -268,3 +268,157 @@ def compute_pairwise_cosine(embeddings):
     # Compute the cosine similarity matrix.
     sim_matrix = embeddings_normalized @ embeddings_normalized.T
     return sim_matrix
+
+
+GENRES = [
+    "Drama",
+    "Comedy",
+    "Action",
+    "Thriller",
+    "Romance",
+    "Adventure",
+    "Children's",
+    "Crime",
+    "Sci-Fi",
+    "Horror",
+    "War",
+    "Mystery",
+    "Musical",
+    "Documentary",
+    "Animation",
+    "Western",
+    "Film-Noir",
+    "Fantasy",
+    "unknown",
+]
+
+
+def create_genre_vector(categories: set) -> np.ndarray:
+    """
+    Create a binary genre vector from a set of categories.
+
+    Parameters:
+        categories (set): Set of genre categories for a movie
+
+    Returns:
+        np.ndarray: Binary vector where 1 indicates presence of genre
+    """
+    vector = np.zeros(len(GENRES))
+    for i, genre in enumerate(GENRES):
+        if genre in categories:
+            vector[i] = 1
+    return vector
+
+
+def compute_genre_similarity(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """
+    Compute similarity between two genre vectors using normalized Euclidean distance.
+
+    Parameters:
+        vec1 (np.ndarray): First genre vector
+        vec2 (np.ndarray): Second genre vector
+
+    Returns:
+        float: Similarity score between 0 and 1
+    """
+    # Compute Euclidean distance
+    distance = np.linalg.norm(vec1 - vec2)
+    # Normalize by maximum possible distance (sqrt(2) for binary vectors)
+    max_distance = np.sqrt(2)
+    # Convert to similarity (1 - normalized_distance)
+    similarity = 1.0 - (distance / max_distance)
+    return similarity
+
+
+def load_movie_categories(mapping_csv_path):
+    """
+    Load movie categories from CSV file into dictionaries.
+
+    Parameters:
+        mapping_csv_path (str): Path to the CSV file with columns "item_id" and "class".
+
+    Returns:
+        tuple: (title_to_categories dict, title_to_vector dict)
+    """
+    title_to_categories = {}
+    title_to_vector = {}
+
+    with open(mapping_csv_path, "r", encoding="utf-8") as map_file:
+        reader = csv.DictReader(map_file)
+        for row in reader:
+            title = row["item_id"]
+            categories = set(row["class"].split())
+            title_to_categories[title] = categories
+            title_to_vector[title] = create_genre_vector(categories)
+
+    return title_to_categories, title_to_vector
+
+
+def compute_euclidean_distance(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """
+    Compute Euclidean distance between two vectors.
+
+    Parameters:
+        vec1 (np.ndarray): First vector
+        vec2 (np.ndarray): Second vector
+
+    Returns:
+        float: Euclidean distance
+    """
+    return np.linalg.norm(vec1 - vec2)
+
+
+def compute_average_category_ild_batched(
+    rankings: dict, categories_dict: tuple, topk: int = 10
+) -> float:
+    """
+    Compute average Intra-List Diversity based on genre vectors using Euclidean distance.
+
+    ILD = (2 / (len(list) * (len(list) - 1))) * sum(distance(i,j))
+    where distance is Euclidean distance between genre vectors.
+
+    Parameters:
+        rankings (dict): Dictionary with keys as user IDs and values as tuples of
+                        (titles: [str], relevance_scores: [float])
+        categories_dict (tuple): Tuple of (title_to_categories dict, title_to_vector dict)
+        topk (int): Number of recommendations to consider per user
+
+    Returns:
+        float: Average ILD value over all users
+    """
+    _, title_to_vector = categories_dict  # Unpack the tuple
+    ild_list = []
+
+    for user_id, (titles, _) in rankings.items():
+        # Only take the top-k titles
+        titles = titles[:topk]
+        n = len(titles)
+
+        if n <= 1:
+            ild_list.append(0.0)
+            continue
+
+        # Calculate sum of pairwise distances
+        total_distance = 0.0
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                title1, title2 = titles[i], titles[j]
+
+                # Get genre vectors for both titles
+                if title1 not in title_to_vector or title2 not in title_to_vector:
+                    print(f"Title {title1} or {title2} not in title_to_vector")
+
+                vec1 = title_to_vector.get(title1, np.zeros(len(GENRES)))
+                vec2 = title_to_vector.get(title2, np.zeros(len(GENRES)))
+
+                # Calculate Euclidean distance
+                distance = compute_euclidean_distance(vec1, vec2)
+                total_distance += distance
+
+        # Calculate ILD using the formula: (2 / (n * (n-1))) * sum(distances)
+        ild = (2.0 / (n * (n - 1))) * total_distance if n > 1 else 0.0
+        ild_list.append(ild)
+
+    # Return average ILD across all users
+    return np.mean(ild_list)

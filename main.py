@@ -1,7 +1,6 @@
 import pickle
 import numpy as np
 import csv
-import logging
 import matplotlib.pyplot as plt
 import os
 import datetime
@@ -18,19 +17,18 @@ from algorithms.sy import SYDiversifier
 from config_parser import get_config
 from utils import (
     compute_average_ild_batched,
+    compute_average_category_ild_batched,
     evaluate_recommendation_metrics,
     load_data_and_convert,
+    load_movie_categories,
     precompute_title_embeddings,
     create_relevance_lists,
 )
 from embedders.ste_embedder import STEmbedder
+from logger import get_logger
 
 # Set up logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+logger = get_logger(__name__)
 
 
 def advanced_metric_tracking_pipeline(config):
@@ -38,7 +36,7 @@ def advanced_metric_tracking_pipeline(config):
     Vary a generic diversification algorithm parameter and track metrics,
     stopping if NDCG drops more than the threshold relative to the non-diversified baseline.
     """
-    logging.info("=== Starting Metric Tracking Pipeline ===")
+    logger.info("=== Starting Metric Tracking Pipeline ===")
 
     # Get experiment parameters from config
     diversifier_cls = globals()[config["experiment"]["diversifier"]]
@@ -48,6 +46,7 @@ def advanced_metric_tracking_pipeline(config):
     param_step = config["experiment"]["param_step"]
     threshold_drop = config["experiment"]["threshold_drop"]
     top_k = config["experiment"]["top_k"]
+    use_category_ild = config["experiment"].get("use_category_ild", False)
 
     # Create results directory
     diversifier_name = diversifier_cls.__name__.replace("Diversifier", "").lower()
@@ -63,6 +62,12 @@ def advanced_metric_tracking_pipeline(config):
     test_samples = data_path / config["data"]["test_samples"]
     topk_list_path = data_path / config["data"]["topk_list"]
     topk_scores_path = data_path / config["data"]["topk_scores"]
+
+    # Only load categories if needed
+    categories_data = None
+    if use_category_ild:
+        categories_path = data_path / config["data"]["movie_categories"]
+        categories_data = load_movie_categories(str(categories_path))
 
     # Load and convert data
     converted_data = load_data_and_convert(str(test_samples), str(item_mappings))
@@ -99,28 +104,50 @@ def advanced_metric_tracking_pipeline(config):
     # Precompute embeddings once using a baseline embedder instance.
     precomputed_embeddings = precompute_title_embeddings(rankings, embedder)
 
-    baseline_ild = compute_average_ild_batched(
+    # Calculate embedding-based ILD
+    baseline_emb_ild = compute_average_ild_batched(
         rankings,
         embedder,
         topk=top_k,
         precomputed_embeddings=precomputed_embeddings,
     )
-    logging.info(
-        "Baseline (Non-diversified): NDCG@%d=%.4f, ILD@%d=%.4f",
-        top_k,
-        baseline_ndcg,
-        top_k,
-        baseline_ild,
-    )
+
+    # Calculate category-based ILD if enabled
+    baseline_cat_ild = None
+    if use_category_ild:
+        baseline_cat_ild = compute_average_category_ild_batched(
+            rankings,
+            categories_data,
+            topk=top_k,
+        )
+
+    # Log baseline metrics
+    if use_category_ild:
+        logger.info(
+            "Baseline (Non-diversified): NDCG@%d=%.4f, Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
+            top_k,
+            baseline_ndcg,
+            top_k,
+            baseline_emb_ild,
+            top_k,
+            baseline_cat_ild,
+        )
+    else:
+        logger.info(
+            "Baseline (Non-diversified): NDCG@%d=%.4f, Emb-ILD@%d=%.4f",
+            top_k,
+            baseline_ndcg,
+            top_k,
+            baseline_emb_ild,
+        )
 
     # ---------------------------
     # Diversification Loop (Varying the Generic Parameter)
     # ---------------------------
     results = []  # To store metrics for each parameter value.
     param_values = np.arange(param_start, param_end + param_step / 2, param_step)
-    best_ild_before_drop = None
     for param_value in param_values:
-        logging.info(
+        logger.info(
             "Running diversification with %s=%.2f", diversifier_param_name, param_value
         )
 
@@ -144,53 +171,83 @@ def advanced_metric_tracking_pipeline(config):
         prec, rec, hit, ndcg = evaluate_recommendation_metrics(
             relevance_lists_div, top_k
         )
-        ild = compute_average_ild_batched(
+
+        # Calculate embedding-based ILD
+        emb_ild = compute_average_ild_batched(
             diversified_results,
             diversifier.embedder,
             topk=top_k,
             precomputed_embeddings=precomputed_embeddings,
         )
 
-        ndcg_decrease_pct = (baseline_ndcg - ndcg) / baseline_ndcg
-        logging.info(
-            "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), ILD@%d=%.4f, Hit@%d=%.4f, Recall@%d=%.4f, Precision@%d=%.4f",
-            diversifier_param_name,
-            param_value,
-            top_k,
-            ndcg,
-            ndcg_decrease_pct * 100,
-            top_k,
-            ild,
-            top_k,
-            hit,
-            top_k,
-            rec,
-            top_k,
-            prec,
-        )
+        # Calculate category-based ILD if enabled
+        cat_ild = None
+        if use_category_ild:
+            cat_ild = compute_average_category_ild_batched(
+                diversified_results,
+                categories_data,
+                topk=top_k,
+            )
 
-        results.append(
-            {
-                diversifier_param_name: round(param_value, 2),
-                "ndcg": round(ndcg, 4),
-                "ndcg_drop_pct": round(ndcg_decrease_pct * 100, 4),
-                "ild": round(ild, 4),
-                "hit": round(hit, 4),
-                "recall": round(rec, 4),
-                "precision": round(prec, 4),
-            }
-        )
+        ndcg_decrease_pct = (baseline_ndcg - ndcg) / baseline_ndcg
+
+        # Log metrics based on whether category ILD is enabled
+        if use_category_ild:
+            logger.info(
+                "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
+                diversifier_param_name,
+                param_value,
+                top_k,
+                ndcg,
+                ndcg_decrease_pct * 100,
+                top_k,
+                emb_ild,
+                top_k,
+                cat_ild,
+            )
+        else:
+            logger.info(
+                "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), Emb-ILD@%d=%.4f",
+                diversifier_param_name,
+                param_value,
+                top_k,
+                ndcg,
+                ndcg_decrease_pct * 100,
+                top_k,
+                emb_ild,
+            )
+
+        # Store results
+        result_dict = {
+            diversifier_param_name: param_value,
+            "ndcg": round(ndcg, 4),
+            "ndcg_drop": round(ndcg_decrease_pct * 100, 4),
+            "emb_ild": round(emb_ild, 4),
+            "hit": round(hit, 4),
+            "recall": round(rec, 4),
+            "precision": round(prec, 4),
+        }
+        if use_category_ild:
+            result_dict["cat_ild"] = round(cat_ild, 4)
+
+        results.append(result_dict)
 
         # Stop when NDCG drops by threshold_drop
         if ndcg_decrease_pct > threshold_drop:
-            logging.info(
-                "Stopping: NDCG dropped by %.2f%%. Best ILD before drop: %.4f",
-                ndcg_decrease_pct * 100,
-                results[-2]["ild"] if len(results) > 1 else baseline_ild,
-            )
+            if use_category_ild:
+                logger.warning(
+                    "Stopping: NDCG dropped by %.2f%%. Best Emb-ILD before drop: %.4f, Best Cat-ILD before drop: %.4f",
+                    ndcg_decrease_pct * 100,
+                    results[-2]["emb_ild"] if len(results) > 1 else baseline_emb_ild,
+                    results[-2]["cat_ild"] if len(results) > 1 else baseline_cat_ild,
+                )
+            else:
+                logger.warning(
+                    "Stopping: NDCG dropped by %.2f%%. Best Emb-ILD before drop: %.4f",
+                    ndcg_decrease_pct * 100,
+                    results[-2]["emb_ild"] if len(results) > 1 else baseline_emb_ild,
+                )
             break
-
-        best_ild_before_drop = ild
 
     # ---------------------------
     # Log Metrics to CSV
@@ -198,34 +255,38 @@ def advanced_metric_tracking_pipeline(config):
     csv_filename = os.path.join(
         results_folder, f"diversification_metrics_{timestamp}.csv"
     )
+
+    # Define fieldnames based on whether category ILD is enabled
+    fieldnames = [
+        diversifier_param_name,
+        "ndcg",
+        "ndcg_drop",
+        "emb_ild",
+        "hit",
+        "recall",
+        "precision",
+    ]
+    if use_category_ild:
+        fieldnames.insert(4, "cat_ild")
+
     with open(csv_filename, "w", newline="") as csvfile:
-        fieldnames = [
-            diversifier_param_name,
-            "ndcg",
-            "ndcg_drop_pct",
-            "ild",
-            "hit",
-            "recall",
-            "precision",
-        ]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
-        # Write with 4 decimal points formatting.
         for res in results:
             writer.writerow(
                 {k: f"{v:.4f}" if isinstance(v, float) else v for k, v in res.items()}
             )
-    logging.info("Metrics logged to CSV file: %s", csv_filename)
+    logger.info("Metrics logged to CSV file: %s", csv_filename)
 
     # ---------------------------
     # Create Plots
     # ---------------------------
     param_vals = [res[diversifier_param_name] for res in results]
     ndcg_vals = [res["ndcg"] for res in results]
-    ild_vals = [res["ild"] for res in results]
+    emb_ild_vals = [res["emb_ild"] for res in results]
 
-    # Create figure with dual y-axes
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    # Create figure with appropriate number of y-axes
+    fig, ax1 = plt.subplots(figsize=(12, 6))
 
     # Plot NDCG on primary y-axis
     color1 = "#1f77b4"  # Blue
@@ -234,16 +295,33 @@ def advanced_metric_tracking_pipeline(config):
     line1 = ax1.plot(param_vals, ndcg_vals, color=color1, marker="o", label="NDCG")
     ax1.tick_params(axis="y", labelcolor=color1)
 
-    # Create secondary y-axis and plot ILD
+    # Create secondary y-axis and plot Embedding ILD
     ax2 = ax1.twinx()
     color2 = "#ff7f0e"  # Orange
-    ax2.set_ylabel("ILD", color=color2)
-    line2 = ax2.plot(param_vals, ild_vals, color=color2, marker="x", label="ILD")
+    ax2.set_ylabel("Embedding ILD", color=color2)
+    line2 = ax2.plot(
+        param_vals, emb_ild_vals, color=color2, marker="x", label="Emb-ILD"
+    )
     ax2.tick_params(axis="y", labelcolor=color2)
 
-    # Add legend
     lines = line1 + line2
-    labels = [l.get_label() for l in lines]
+    labels = [line.get_label() for line in lines]
+
+    # Add Category ILD if enabled
+    if use_category_ild:
+        cat_ild_vals = [res["cat_ild"] for res in results]
+        ax3 = ax1.twinx()
+        ax3.spines["right"].set_position(("outward", 60))
+        color3 = "#2ca02c"  # Green
+        ax3.set_ylabel("Category ILD", color=color3)
+        line3 = ax3.plot(
+            param_vals, cat_ild_vals, color=color3, marker="s", label="Cat-ILD"
+        )
+        ax3.tick_params(axis="y", labelcolor=color3)
+        lines += line3
+        labels.append("Cat-ILD")
+
+    # Add legend
     ax1.legend(lines, labels, loc="center right")
 
     # Add grid
@@ -257,10 +335,10 @@ def advanced_metric_tracking_pipeline(config):
         results_folder, f"diversification_metrics_{timestamp}.png"
     )
     plt.savefig(plot_filename)
-    logging.info("Plot saved to %s", plot_filename)
+    logger.info("Plot saved to %s", plot_filename)
     plt.close()
 
-    logging.info("=== Metric Tracking Pipeline Completed ===")
+    logger.info("=== Metric Tracking Pipeline Completed ===")
 
 
 def run_diversification(
@@ -282,7 +360,6 @@ def run_diversification(
             raise ValueError(
                 f"User {user_id}: Number of titles and relevance scores do not match."
             )
-        # Create an array of items: [dummy_index, title, relevance_score]
         items = np.array(
             [[i, title, float(relevance_scores[i])] for i, title in enumerate(titles)],
             dtype=object,
