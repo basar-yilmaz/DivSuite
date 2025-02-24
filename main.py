@@ -5,21 +5,27 @@ import logging
 import matplotlib.pyplot as plt
 import os
 import datetime
+from pathlib import Path
 
+from algorithms.mmr import MMRDiversifier
 from algorithms.motley import MotleyDiversifier
+from algorithms.bswap import BSwapDiversifier
+from algorithms.clt import CLTDiversifier
+from algorithms.msd import MaxSumDiversifier
+from algorithms.swap import SwapDiversifier
+from algorithms.sy import SYDiversifier
 
+from config_parser import get_config
 from utils import (
-    compute_average_ild_batched,  # Updated to accept an optional 'precomputed_embeddings' argument.
+    compute_average_ild_batched,
     evaluate_recommendation_metrics,
     load_data_and_convert,
     precompute_title_embeddings,
     create_relevance_lists,
 )
-from embedders.ste_embedder import (
-    STEmbedder,
-)  # Ensure this is your STEmbedder implementation.
+from embedders.ste_embedder import STEmbedder
 
-# Set up logging configuration.
+# Set up logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -27,59 +33,60 @@ logging.basicConfig(
 )
 
 
-def advanced_metric_tracking_pipeline(
-    diversifier_cls,
-    diversifier_param_name: str,
-    param_start: float,
-    param_end: float,
-    param_step: float,
-    threshold_drop: float = 0.1,
-    top_k: int = 10,
-):
+def advanced_metric_tracking_pipeline(config):
     """
     Vary a generic diversification algorithm parameter and track metrics,
     stopping if NDCG drops more than the threshold relative to the non-diversified baseline.
-
-    Parameters:
-      diversifier_cls: The diversification algorithm class (e.g. BSwapDiversifier).
-      diversifier_param_name (str): The name of the parameter to vary (e.g., "theta" or "lambda").
-      param_start (float): Starting value of the parameter.
-      param_end (float): Ending value of the parameter.
-      param_step (float): Step change for the parameter.
-      threshold_drop (float): Fractional decrease in NDCG (from baseline) at which to stop (e.g., 0.1 for 10%).
-      top_k (int): Number of top recommendations to evaluate.
     """
     logging.info("=== Starting Metric Tracking Pipeline ===")
 
-    # Create a folder to store results (CSV and plots)
-    # Determine the folder name based on the diversifier class name.
+    # Get experiment parameters from config
+    diversifier_cls = globals()[config["experiment"]["diversifier"]]
+    diversifier_param_name = config["experiment"]["param_name"]
+    param_start = config["experiment"]["param_start"]
+    param_end = config["experiment"]["param_end"]
+    param_step = config["experiment"]["param_step"]
+    threshold_drop = config["experiment"]["threshold_drop"]
+    top_k = config["experiment"]["top_k"]
+
+    # Create results directory
     diversifier_name = diversifier_cls.__name__.replace("Diversifier", "").lower()
     results_folder = f"results_{diversifier_name}"
     os.makedirs(results_folder, exist_ok=True)
-
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ---------------------------
     # Load Data and Build Rankings
     # ---------------------------
-    data_path = "topk_data/amazon14"
-    item_mappings = f"{data_path}/final.csv"
-    test_samples = f"{data_path}/amz_14_final_samples.csv"
+    data_path = Path(config["data"]["base_path"])
+    item_mappings = data_path / config["data"]["item_mappings"]
+    test_samples = data_path / config["data"]["test_samples"]
+    topk_list_path = data_path / config["data"]["topk_list"]
+    topk_scores_path = data_path / config["data"]["topk_scores"]
 
-    # Each row: [pos_item, neg_item1, neg_item2, ...]
-    converted_data = load_data_and_convert(test_samples, item_mappings)
+    # Load and convert data
+    converted_data = load_data_and_convert(str(test_samples), str(item_mappings))
     pos_items = [row[0] for row in converted_data]
 
-    # Load ranked top-100 items and scores.
-    topk_list = pickle.load(open(f"{data_path}/amz-topk_iid_list.pkl", "rb"))
-    topk_scores = pickle.load(open(f"{data_path}/amz-topk_score.pkl", "rb"))
+    # Load ranked items and scores
+    topk_list = pickle.load(open(topk_list_path, "rb"))
+    topk_scores = pickle.load(open(topk_scores_path, "rb"))
 
-    # Build rankings: {user_id: (titles: [str], relevance_scores: [float]), ...}
+    # Build rankings
     rankings = {}
     for idx, (items, scores) in enumerate(zip(topk_list, topk_scores)):
         user_id = idx + 1
         titles = [converted_data[idx][item] for item in items]
         rankings[user_id] = (titles, scores.tolist())
+
+    # ---------------------------
+    # Initialize Embedder
+    # ---------------------------
+    embedder = STEmbedder(
+        model_name=config["embedder"]["model_name"],
+        device=config["embedder"]["device"],
+        batch_size=config["embedder"]["batch_size"],
+    )
 
     # ---------------------------
     # Compute Baseline (Non-Diversified) Metrics
@@ -90,9 +97,6 @@ def advanced_metric_tracking_pipeline(
     )
 
     # Precompute embeddings once using a baseline embedder instance.
-    embedder = STEmbedder(
-        model_name="all-MiniLM-L6-v2", device="cuda", batch_size=40960
-    )
     precomputed_embeddings = precompute_title_embeddings(rankings, embedder)
 
     baseline_ild = compute_average_ild_batched(
@@ -114,6 +118,7 @@ def advanced_metric_tracking_pipeline(
     # ---------------------------
     results = []  # To store metrics for each parameter value.
     param_values = np.arange(param_start, param_end + param_step / 2, param_step)
+    best_ild_before_drop = None
     for param_value in param_values:
         logging.info(
             "Running diversification with %s=%.2f", diversifier_param_name, param_value
@@ -146,12 +151,14 @@ def advanced_metric_tracking_pipeline(
             precomputed_embeddings=precomputed_embeddings,
         )
 
+        ndcg_decrease_pct = (baseline_ndcg - ndcg) / baseline_ndcg
         logging.info(
-            "%s=%.2f: NDCG@%d=%.4f, ILD@%d=%.4f, Hit@%d=%.4f, Recall@%d=%.4f, Precision@%d=%.4f",
+            "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), ILD@%d=%.4f, Hit@%d=%.4f, Recall@%d=%.4f, Precision@%d=%.4f",
             diversifier_param_name,
             param_value,
             top_k,
             ndcg,
+            ndcg_decrease_pct * 100,
             top_k,
             ild,
             top_k,
@@ -164,8 +171,9 @@ def advanced_metric_tracking_pipeline(
 
         results.append(
             {
-                diversifier_param_name: param_value,
+                diversifier_param_name: round(param_value, 2),
                 "ndcg": round(ndcg, 4),
+                "ndcg_drop_pct": round(ndcg_decrease_pct * 100, 4),
                 "ild": round(ild, 4),
                 "hit": round(hit, 4),
                 "recall": round(rec, 4),
@@ -173,13 +181,16 @@ def advanced_metric_tracking_pipeline(
             }
         )
 
-        # Stop early if NDCG has dropped more than the threshold.
-        if ndcg < baseline_ndcg * (1 - threshold_drop):
+        # Stop when NDCG drops by threshold_drop
+        if ndcg_decrease_pct > threshold_drop:
             logging.info(
-                "Stopping early: NDCG dropped more than %.0f%% from baseline.",
-                threshold_drop * 100,
+                "Stopping: NDCG dropped by %.2f%%. Best ILD before drop: %.4f",
+                ndcg_decrease_pct * 100,
+                results[-2]["ild"] if len(results) > 1 else baseline_ild,
             )
             break
+
+        best_ild_before_drop = ild
 
     # ---------------------------
     # Log Metrics to CSV
@@ -191,12 +202,13 @@ def advanced_metric_tracking_pipeline(
         fieldnames = [
             diversifier_param_name,
             "ndcg",
+            "ndcg_drop_pct",
             "ild",
             "hit",
             "recall",
             "precision",
         ]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="\t")
         writer.writeheader()
         # Write with 4 decimal points formatting.
         for res in results:
@@ -212,45 +224,41 @@ def advanced_metric_tracking_pipeline(
     ndcg_vals = [res["ndcg"] for res in results]
     ild_vals = [res["ild"] for res in results]
 
-    # Plot 1: Subplots (side by side)
-    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-    axes[0].plot(param_vals, ndcg_vals, marker="o", color="blue")
-    axes[0].set_xlabel(f"{diversifier_param_name.capitalize()} Parameter")
-    axes[0].set_ylabel(f"NDCG@{top_k}")
-    axes[0].set_title("NDCG vs. " + diversifier_param_name.capitalize())
-    axes[0].grid(True)
+    # Create figure with dual y-axes
+    fig, ax1 = plt.subplots(figsize=(10, 6))
 
-    axes[1].plot(param_vals, ild_vals, marker="x", color="red")
-    axes[1].set_xlabel(f"{diversifier_param_name.capitalize()} Parameter")
-    axes[1].set_ylabel(f"ILD@{top_k}")
-    axes[1].set_title("ILD vs. " + diversifier_param_name.capitalize())
-    axes[1].grid(True)
+    # Plot NDCG on primary y-axis
+    color1 = "#1f77b4"  # Blue
+    ax1.set_xlabel(f"{diversifier_param_name.capitalize()} Parameter")
+    ax1.set_ylabel("NDCG", color=color1)
+    line1 = ax1.plot(param_vals, ndcg_vals, color=color1, marker="o", label="NDCG")
+    ax1.tick_params(axis="y", labelcolor=color1)
 
+    # Create secondary y-axis and plot ILD
+    ax2 = ax1.twinx()
+    color2 = "#ff7f0e"  # Orange
+    ax2.set_ylabel("ILD", color=color2)
+    line2 = ax2.plot(param_vals, ild_vals, color=color2, marker="x", label="ILD")
+    ax2.tick_params(axis="y", labelcolor=color2)
+
+    # Add legend
+    lines = line1 + line2
+    labels = [l.get_label() for l in lines]
+    ax1.legend(lines, labels, loc="center right")
+
+    # Add grid
+    ax1.grid(True, alpha=0.3)
+
+    plt.title(f"{diversifier_cls.__name__} Performance")
     plt.tight_layout()
-    subplot_filename = os.path.join(
-        results_folder, f"diversification_subplots_{timestamp}.png"
-    )
-    plt.savefig(subplot_filename)
-    plt.close(fig)
-    logging.info("Subplot saved to %s", subplot_filename)
 
-    # Plot 2: Combined plot (both metrics in one graph)
-    plt.figure(figsize=(10, 6))
-    plt.plot(param_vals, ndcg_vals, marker="o", label=f"NDCG@{top_k}", color="blue")
-    plt.plot(param_vals, ild_vals, marker="x", label=f"ILD@{top_k}", color="red")
-    plt.xlabel(f"{diversifier_param_name.capitalize()} Parameter")
-    plt.ylabel("Metric Value")
-    plt.title(
-        f"Recommendation Metrics vs. {diversifier_param_name.capitalize()} Parameter"
-    )
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
-    combined_plot_filename = os.path.join(
+    # Save plot
+    plot_filename = os.path.join(
         results_folder, f"diversification_metrics_{timestamp}.png"
     )
-    plt.savefig(combined_plot_filename)
-    logging.info("Combined plot saved to %s", combined_plot_filename)
+    plt.savefig(plot_filename)
+    logging.info("Plot saved to %s", plot_filename)
+    plt.close()
 
     logging.info("=== Metric Tracking Pipeline Completed ===")
 
@@ -290,13 +298,5 @@ def run_diversification(
 
 
 if __name__ == "__main__":
-    # Example usage with BSwapDiversifier (varying the "theta" parameter).
-    advanced_metric_tracking_pipeline(
-        diversifier_cls=MotleyDiversifier,
-        diversifier_param_name="theta_",
-        param_start=0,
-        param_end=1.0,
-        param_step=0.05,
-        threshold_drop=0.1,
-        top_k=10,
-    )
+    config = get_config()
+    advanced_metric_tracking_pipeline(config)

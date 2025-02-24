@@ -1,100 +1,123 @@
-# DivSuite
+# Diversification Experiments
 
+This project implements various diversification algorithms for recommendation systems and provides tools to evaluate their performance by tracking NDCG and ILD metrics.
 
-A Python framework for diversifying recommendation lists and evaluating them using metrics such as ILD, Recall, NDCG, and Hit Rate. This framework provides a modular design where different diversification algorithms (extending a common base) and embedding methods can be easily integrated and evaluated.
+## Features
 
-## Table of Contents
+- Multiple diversification algorithms:
+  - Motley (theta parameter)
+  - MMR (lambda parameter)
+  - BSwap (theta parameter)
+  - CLT (lambda parameter)
+  - MaxSum (lambda parameter)
+  - Swap (theta parameter)
+  - SY (lambda parameter)
+- Configurable via YAML and command-line arguments
+- Automatic parameter sweep with early stopping based on NDCG drop
+- Metrics tracking and visualization
+- Tab-separated results export
+- Dual-axis performance plots
 
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Data Requirements](#data-requirements)
-  - [Top-K Recommendations](#top-k-recommendations)
-  - [Item Mapping](#item-mapping)
-  - [User Ground Truth](#user-ground-truth)
+## Setup
 
-
-## Overview
-
-The framework is designed to:
-
-- **Diversify Recommendations:**  
-  Apply various diversification algorithms (e.g., SYDiversifier, MMRDiversifier, etc.) that extend the `BaseDiversifier` class.
-
-- **Generate Embeddings:**  
-  Use open source Hugging Face models via the provided embedding methods to obtain item representations.
-
-- **Evaluate Recommendations:**  
-  Calculate metrics such as Intra-List Diversity (ILD), Recall, NDCG, and Hit Rate, allowing for flexible evaluation even when users have varying numbers of ground truth items.
-
-## Project Structure
-```
-📦src
- ┣ 📂algorithms
- ┃ ┣ 📜base.py
- ┃ ┣ 📜bswap.py
- ┃ ┣ 📜clt.py
- ┃ ┣ 📜mmr.py
- ┃ ┣ 📜motley.py
- ┃ ┣ 📜msd.py
- ┃ ┣ 📜swap.py
- ┃ ┗ 📜sy.py
- ┣ 📂embedders
- ┃ ┣ 📜base_embedder.py
- ┃ ┣ 📜hf_embedder.py
- ┃ ┗ 📜ste_embedder.py
- ┣ 📂topk_data
- ┃ ┗ 📂ml100k
- ┃ ┃ ┣ 📜CMF_topk.pkl
- ┃ ┃ ┣ 📜target_item_id_mapping.csv
- ┃ ┃ ┗ 📜uid2positive_item.csv
- ┣ 📜README.md
- ┣ 📜config.py
- ┣ 📜environment.yml
- ┣ 📜logger.py
- ┣ 📜main.py
- ┗ 📜utils.py
+1. Install dependencies:
+```bash
+pip install numpy pandas matplotlib pyyaml sentence-transformers
 ```
 
-## Data Requirements
-
-### Top-K Recommendations
-
-Place a `.pkl` file in the `topk_data/` folder that contains the top-K recommendations for each user. The expected format is a Python dictionary:
-```python
-{
-    user_id: (list_of_titles, list_of_scores),
-}
+2. Prepare your data in the following structure:
 ```
-For example:
-```json
-{
-    1: (['Scout, The (1994)'], [2.1710939407348633]),
-    2: (['Scout, The (1994)'], [2.1220200061798096]),
-    3: (["Devil's Own, The (1997)", "Umbrellas of Cherbourg, The (Parapluies de Cherbourg, Les) (1964)"], [1.93, 1.68]),
-    ...
-}
+topk_data/amazon14/
+├── target_item_mapping.csv
+├── amz_14_final_samples.csv
+├── amz-topk_iid_list.pkl
+└── amz-topk_score.pkl
 ```
 
-### Item Mapping
+## Configuration
 
-Include a CSV file named `target_item_id_mapping.csv` in the `topk_data/` folder. This file maps internal item IDs to their external representations (titles). The format should look like:
+The experiment can be configured through:
+1. YAML configuration file (`config.yaml`)
+2. Command-line arguments (override YAML settings)
 
-```csv
-item_id,item
-0,[PAD]
-1,101 Dalmatians (1996)
-2,12 Angry Men (1957)
-3,187 (1997)
+### YAML Configuration
+
+```yaml
+# Data paths
+data:
+  base_path: "topk_data/amazon14"
+  item_mappings: "target_item_mapping.csv"
+  test_samples: "amz_14_final_samples.csv"
+  topk_list: "amz-topk_iid_list.pkl"
+  topk_scores: "amz-topk_score.pkl"
+
+# Embedder settings
+embedder:
+  model_name: "all-MiniLM-L6-v2"
+  device: "cuda"
+  batch_size: 40960
+
+# Experiment parameters
+experiment:
+  diversifier: "motley"  # Options: motley, mmr, bswap, clt, msd, swap, sy
+  param_name: "theta_"   # Auto-set based on diversifier if not specified
+  param_start: 0.0
+  param_end: 1.0
+  param_step: 0.05
+  threshold_drop: 0.01   # Stop when NDCG drops by this percentage
+  top_k: 10
 ```
 
-### User Ground Truth
-Place a CSV file named `uid2positive_item.csv` in the `topk_data/` folder. This file contains the positive (ground truth) items for each user, with both user and item IDs in the internal format (as provided by recbole). For example:
+### Command-line Arguments
 
-```csv
-user_id,positive_item
-0,[]
-1,"[514, 274, 1181, 816, 561, 436, 1076, 695, ...]"
-2,"[193, 226, 803, 292, 1061, 102, 421, ...]"
-3,"[416, 409, 539, 598]"
-...
+All configuration options can be overridden via command-line:
+
+```bash
+python main.py --config custom_config.yaml  # Use different config file
+python main.py --diversifier mmr --param_start 0.2 --param_end 0.8  # Override specific parameters
+```
+
+Available arguments:
+- Data paths: `--data_path`, `--item_mappings`, `--test_samples`, `--topk_list`, `--topk_scores`
+- Embedder: `--model_name`, `--device`, `--batch_size`
+- Experiment: `--diversifier`, `--param_name`, `--param_start`, `--param_end`, `--param_step`, `--threshold_drop`, `--top_k`
+
+## Output
+
+The experiment produces:
+
+1. Real-time logging of metrics for each parameter value
+2. Tab-separated CSV file with metrics:
+   - Parameter value
+   - NDCG
+   - NDCG drop percentage
+   - ILD
+   - Hit Rate
+   - Recall
+   - Precision
+
+3. Visualization plot showing:
+   - NDCG values on left y-axis (blue)
+   - ILD values on right y-axis (orange)
+   - Parameter values on x-axis
+
+Results are saved in `results_{algorithm}/` directory with timestamp-based filenames.
+
+## Example Usage
+
+Basic run with default settings:
+```bash
+python main.py
+```
+
+Run MMR diversification with custom parameters:
+```bash
+python main.py --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1 --threshold_drop 0.02
+```
+
+Run multiple algorithms sequentially:
+```bash
+for alg in motley mmr bswap clt msd swap sy; do
+    python main.py --diversifier $alg
+done
 ```
