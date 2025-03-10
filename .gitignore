@@ -2,9 +2,10 @@ tests/
 test*
 __pycache__/
 *.pyc
-metrics/
 *.pkl
 *.csv
 topk_data/
 results_*
 .cursor/
+configs/
+shuffle_test.py
