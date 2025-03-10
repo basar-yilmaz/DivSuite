@@ -1,6 +1,28 @@
-# Diversification Experiments
+# **DivSuite**:  A Diversification Experiments Framework
 
 This project implements various diversification algorithms for recommendation systems and provides tools to evaluate their performance by tracking NDCG and ILD metrics.
+
+## Project Structure
+
+```
+diversification/
+├── main.py                 # Main entry point
+├── README.md              # This file
+├── requirements.txt       # Python dependencies
+├── setup.py              # Package setup
+├── src/                  # Source code
+│   ├── core/            # Core functionality
+│   │   ├── algorithms/  # Diversification algorithms
+│   │   ├── embedders/   # Text embedding models
+│   │   └── pipeline.py  # Main pipeline
+│   ├── data/            # Data loading and processing
+│   ├── metrics/         # Evaluation metrics
+│   ├── visualization/   # Plotting and visualization
+│   ├── config/         # Configuration handling
+│   └── utils/          # Helper utilities
+├── tests/              # Test suite
+└── configs/           # Configuration files
+```
 
 ## Features
 
@@ -32,7 +54,17 @@ topk_data/amazon14/
 ├── amz_14_final_samples.csv
 ├── amz-topk_iid_list.pkl
 └── amz-topk_score.pkl
+
+OR
+
+topk_data/movielens/
+├── target_item_mapping.csv (This is a mapping file from internal IDs to externals)
+├── test_samples.csv        (user_id, pos_item, neg_items samples file)
+├── ml-topk_iid_list.pkl    (internal top-k item IDs for each test user)
+└── ml-topk_score.pkl       (scores of the items in the top-k list of each user)
 ```
+
+This file names can be set in the config file.
 
 ## Configuration
 
@@ -48,16 +80,16 @@ There are two ways to configure the experiments:
 ```yaml
 # Data paths
 data:
-  base_path: "topk_data/amazon14"  # or "topk_data/movielens"
+  base_path: "topk_data/movielens"
   item_mappings: "target_item_mapping.csv"
   test_samples: "test_samples.csv"
-  topk_list: "topk_iid_list.pkl"
-  topk_scores: "topk_score.pkl"
+  topk_list: "ml-topk_iid_list.pkl"
+  topk_scores: "ml-topk_score.pkl"
   movie_categories: "movie_categories.csv"  # Optional: only for category-based ILD
 
 # Embedder settings
 embedder:
-  model_name: "all-MiniLM-L6-v2"
+  model_name: "all-MiniLM-L6-v2" # pick an embedding model
   device: "cuda"  # or "cpu"
   batch_size: 40960
 
@@ -70,32 +102,8 @@ experiment:
   param_step: -0.05
   threshold_drop: 0.1   # Stop when NDCG drops by this percentage
   top_k: 10
-  use_category_ild: true  # Optional: enable category-based ILD metric
-```
+  use_category_ild: true  # Optional: enable category-based ILD metric ( this is valid only if we have item_id to category mapping)
 
-2. **Multi-Algorithm Configuration** (`configs/config_samples.yaml`):
-```yaml
-# Data and embedder settings same as above...
-
-# Algorithm-specific configurations
-algorithms:
-  motley:
-    param_name: "theta_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  mmr:
-    param_name: "lambda_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  # ... other algorithms ...
 ```
 
 ### Algorithm Parameters
@@ -145,15 +153,37 @@ Available arguments:
    - Quick testing or parameter tuning
    - Need to enable/disable category-based ILD
 
-2. Use `configs/config_samples.yaml` when:
-   - Running experiments with multiple algorithms
-   - Need different parameter ranges for each algorithm
-   - Batch processing multiple diversification strategies
-
-3. Use command-line arguments when:
+2. Use command-line arguments when:
    - Quick parameter overrides without editing config files
    - Running experiments in scripts/loops
    - CI/CD pipelines
+
+## Module Overview
+
+### Core (`src/core/`)
+- `algorithms/`: Implementation of diversification algorithms
+- `embedders/`: Text embedding models (HuggingFace, SentenceTransformers)
+- `pipeline.py`: Main experiment pipeline orchestration
+
+### Data (`src/data/`)
+- `data_loader.py`: Data loading and preparation
+- `data_utils.py`: Data processing utilities
+- `category_utils.py`: Category/genre handling
+
+### Metrics (`src/metrics/`)
+- `metrics_handler.py`: Metrics computation and tracking
+- `metrics_utils.py`: Metric calculation utilities
+
+### Visualization (`src/visualization/`)
+- `visualization.py`: Plotting and results visualization
+
+### Config (`src/config/`)
+- `config_parser.py`: Configuration parsing and validation
+
+### Utils (`src/utils/`)
+- `experiment_utils.py`: Experiment setup utilities
+- `logger.py`: Logging configuration
+- `utils.py`: General utilities
 
 ## Output
 
@@ -188,7 +218,7 @@ Run MMR diversification with custom parameters:
 python main.py --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1 --threshold_drop 0.02
 ```
 
-Run multiple algorithms sequentially:
+Run multiple algorithms sequentially (not working):
 ```bash
 for alg in motley mmr bswap clt msd swap sy; do
     python main.py --diversifier $alg
