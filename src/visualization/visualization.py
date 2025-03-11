@@ -27,21 +27,23 @@ def log_metrics_to_csv(
     Returns:
         str: Path to the created CSV file.
     """
+    threshold = experiment_params.get("threshold_drop", "NA")
     csv_filename = os.path.join(
-        results_folder, f"diversification_metrics_{timestamp}.csv"
+        results_folder, f"diversification_metrics_drop{threshold}_{timestamp}.csv"
     )
 
     fieldnames = [
         experiment_params["diversifier_param_name"],
         "ndcg",
         "ndcg_drop",
+        "mrr",
         "emb_ild",
         "hit",
         "recall",
         "precision",
     ]
     if experiment_params["use_category_ild"]:
-        fieldnames.insert(4, "cat_ild")
+        fieldnames.insert(5, "cat_ild")
 
     with open(csv_filename, "w", newline="") as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="\t")
@@ -83,6 +85,10 @@ def create_plots(
     ndcg_vals = [res["ndcg"] for res in results]
     emb_ild_vals = [res["emb_ild"] for res in results]
 
+    # Calculate marker frequency
+    def get_markevery(data_length):
+        return max(1, data_length // 10) if data_length > 0 else 1
+
     fig, ax1 = plt.subplots(figsize=(12, 6))
 
     # Plot NDCG
@@ -91,7 +97,14 @@ def create_plots(
         f"{experiment_params['diversifier_param_name'].capitalize()} Parameter"
     )
     ax1.set_ylabel("NDCG", color=color1)
-    line1 = ax1.plot(param_vals, ndcg_vals, color=color1, marker="o", label="NDCG")
+    line1 = ax1.plot(
+        param_vals,
+        ndcg_vals,
+        color=color1,
+        marker="o",
+        markevery=get_markevery(len(param_vals)),
+        label="NDCG",
+    )
     ax1.tick_params(axis="y", labelcolor=color1)
 
     # Plot Embedding ILD
@@ -99,7 +112,12 @@ def create_plots(
     color2 = (255 / 255, 127 / 255, 14 / 255)  # Orange
     ax2.set_ylabel("Embedding ILD", color=color2)
     line2 = ax2.plot(
-        param_vals, emb_ild_vals, color=color2, marker="x", label="Emb-ILD"
+        param_vals,
+        emb_ild_vals,
+        color=color2,
+        marker="x",
+        markevery=get_markevery(len(param_vals)),
+        label="Emb-ILD",
     )
     ax2.tick_params(axis="y", labelcolor=color2)
 
@@ -114,9 +132,13 @@ def create_plots(
         color3 = (44 / 255, 160 / 255, 44 / 255)  # Green
         ax3.set_ylabel("Category ILD", color=color3)
         line3 = ax3.plot(
-            param_vals, cat_ild_vals, color=color3, marker="s", label="Cat-ILD"
+            param_vals,
+            cat_ild_vals,
+            color=color3,
+            marker="s",
+            markevery=get_markevery(len(param_vals)),
+            label="Cat-ILD",
         )
-        ax3.tick_params(axis="y", labelcolor=color3)
         lines += line3
         labels.append("Cat-ILD")
 
@@ -126,8 +148,9 @@ def create_plots(
     plt.title(f"{experiment_params['diversifier_cls'].__name__} Performance")
     plt.tight_layout()
 
+    threshold = experiment_params.get("threshold_drop", "NA")
     plot_filename = os.path.join(
-        results_folder, f"diversification_metrics_{timestamp}.png"
+        results_folder, f"diversification_metrics_drop{threshold}_{timestamp}.png"
     )
     plt.savefig(plot_filename)
     logger.info("Plot saved to %s", plot_filename)

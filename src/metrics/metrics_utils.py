@@ -65,7 +65,7 @@ def compute_average_ild_batched(
 
 def evaluate_recommendation_metrics(relevance_lists: list, k: int) -> tuple:
     """
-    Evaluate Precision@k, Recall@k, Hit@k, and NDCG@k for a set of recommendation lists.
+    Evaluate Precision@k, Recall@k, Hit@k, NDCG@k, and MRR@k for a set of recommendation lists.
 
     Args:
         relevance_lists (list): List of binary relevance vectors, where each vector represents
@@ -73,23 +73,32 @@ def evaluate_recommendation_metrics(relevance_lists: list, k: int) -> tuple:
         k (int): The cutoff rank at which to compute the metrics.
 
     Returns:
-        tuple: (mean_precision, mean_recall, mean_hit, mean_ndcg) where:
+        tuple: (mean_precision, mean_recall, mean_hit, mean_ndcg, mean_mrr) where:
                - mean_precision: Average Precision@k over all users
                - mean_recall: Average Recall@k over all users
                - mean_hit: Average Hit@k over all users
                - mean_ndcg: Average NDCG@k over all users
+               - mean_mrr: Average MRR@k over all users
     """
     metrics = []
     for rel in relevance_lists:
-        rel_k = rel[:k]
+        rel_k = np.array(rel[:k])
         precision = np.sum(rel_k) / k
         recall = float(np.sum(rel_k) > 0)
         hit = int(np.sum(rel_k) > 0)
         scores = np.arange(len(rel_k), 0, -1)
         ndcg = ndcg_score([rel_k], [scores], k=k)
-        metrics.append((precision, recall, hit, ndcg))
 
-    return tuple(np.mean([m[i] for m in metrics]) for i in range(4))
+        # Calculate MRR for this user
+        relevant_positions = np.where(rel_k == 1)[0]
+        if len(relevant_positions) > 0:
+            mrr = 1.0 / (relevant_positions[0] + 1)
+        else:
+            mrr = 0.0
+
+        metrics.append((precision, recall, hit, ndcg, mrr))
+
+    return tuple(np.mean([m[i] for m in metrics]) for i in range(5))
 
 
 def compute_average_category_ild_batched(
@@ -120,7 +129,9 @@ def compute_average_category_ild_batched(
             continue
 
         vectors = np.vstack(vectors)
-        pairwise_distances = pdist(vectors, metric="cosine")  # TODO: check if this is correct
+        pairwise_distances = pdist(
+            vectors, metric="cosine"
+        )  # TODO: check if this is correct
         ild = (2.0 / (len(vectors) * (len(vectors) - 1))) * np.sum(pairwise_distances)
         ild_list.append(ild)
 

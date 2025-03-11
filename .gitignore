@@ -9,3 +9,6 @@ results_*
 .cursor/
 configs/
 shuffle_test.py
+results*/
+saved_embeddings/*
+old/
