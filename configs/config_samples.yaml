@@ -71,3 +71,11 @@ algorithms:
     param_step: -0.05
     threshold_drop: 0.01
     top_k: 10
+
+  gmc:
+    param_name: "lambda_"
+    param_start: 0.0
+    param_end: 1.0
+    param_step: 0.05
+    threshold_drop: 0.01
+    top_k: 10
