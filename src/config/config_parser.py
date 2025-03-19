@@ -18,6 +18,7 @@ DIVERSIFIER_MAP = {
     "msd": "MaxSumDiversifier",
     "swap": "SwapDiversifier",
     "sy": "SYDiversifier",
+    "gmc": "GMCDiversifier",
 }
 
 PARAM_NAME_MAP = {
@@ -28,6 +29,7 @@ PARAM_NAME_MAP = {
     "msd": "lambda_",
     "swap": "theta_",
     "sy": "lambda_",
+    "gmc": "lambda_",
 }
 
 
@@ -38,7 +40,7 @@ def parse_args() -> argparse.Namespace:
 
     # Data paths
     parser.add_argument(
-        "--config", type=str, default="config.yaml", help="Path to config file"
+        "--config", type=str, default="configs/config.yaml", help="Path to config file"
     )
     parser.add_argument("--data_path", type=str, help="Base path for data")
     parser.add_argument("--item_mappings", type=str, help="Path to item mappings file")

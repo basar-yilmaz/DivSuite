@@ -12,6 +12,7 @@ ALGORITHM_REGISTRY = {
     "MSD": {"module": "src.core.algorithms.msd", "class": "MaxSumDiversifier"},
     "BSWAP": {"module": "src.core.algorithms.bswap", "class": "BSwapDiversifier"},
     "Swap": {"module": "src.core.algorithms.swap", "class": "SwapDiversifier"},
+    "GMC": {"module": "src.core.algorithms.gmc", "class": "GMCDiversifier"},
 }
 
 # Create a case-insensitive lookup map
@@ -33,6 +34,8 @@ _NORMALIZED_REGISTRY.update(
         "maxsumdiversifier": "MSD",
         "bswapdiversifier": "BSWAP",
         "swapdiversifier": "Swap",
+        "gmcdiversifier": "GMC",
+        "gmc": "GMC"
     }
 )
 

@@ -1,15 +1,16 @@
 # Data paths
 data:
-  base_path: "topk_data/amazon14"
+  base_path: "topk_data/movielens"
   item_mappings: "target_item_mapping.csv"
-  test_samples: "amz_14_final_samples.csv"
-  topk_list: "amz-topk_iid_list.pkl"
-  topk_scores: "amz-topk_score.pkl"
+  test_samples: "test_samples.csv"
+  topk_list: "ml-topk_iid_list.pkl"
+  topk_scores: "ml-topk_score.pkl"
+  movie_categories: "movie_categories.csv"  # Optional: only for category-based ILD
 
 # Embedder settings
 embedder:
   model_name: "all-MiniLM-L6-v2"
-  device: "cuda"
+  device: "cpu"
   batch_size: 40960
 
 # Algorithm configurations
@@ -68,5 +69,13 @@ algorithms:
     param_start: 1.0
     param_end: 0.0
     param_step: -0.05
+    threshold_drop: 0.01
+    top_k: 10
+
+  gmc:
+    param_name: "lambda_"
+    param_start: 0.0
+    param_end: 1.0
+    param_step: 0.05
     threshold_drop: 0.01
     top_k: 10
