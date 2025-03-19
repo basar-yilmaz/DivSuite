@@ -12,3 +12,5 @@ shuffle_test.py
 results*/
 saved_embeddings/*
 old/
+.env
+logs*/
