@@ -13,6 +13,7 @@ ALGORITHM_REGISTRY = {
     "BSWAP": {"module": "src.core.algorithms.bswap", "class": "BSwapDiversifier"},
     "Swap": {"module": "src.core.algorithms.swap", "class": "SwapDiversifier"},
     "GMC": {"module": "src.core.algorithms.gmc", "class": "GMCDiversifier"},
+    "GNE": {"module": "src.core.algorithms.gne", "class": "GNEDiversifier"},
 }
 
 # Create a case-insensitive lookup map
@@ -35,7 +36,9 @@ _NORMALIZED_REGISTRY.update(
         "bswapdiversifier": "BSWAP",
         "swapdiversifier": "Swap",
         "gmcdiversifier": "GMC",
-        "gmc": "GMC"
+        "gmc": "GMC",
+        "gnediversifier": "GNE",
+        "gne": "GNE",
     }
 )
 

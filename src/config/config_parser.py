@@ -19,6 +19,7 @@ DIVERSIFIER_MAP = {
     "swap": "SwapDiversifier",
     "sy": "SYDiversifier",
     "gmc": "GMCDiversifier",
+    "gne": "GNEDiversifier",
 }
 
 PARAM_NAME_MAP = {
@@ -30,6 +31,7 @@ PARAM_NAME_MAP = {
     "swap": "theta_",
     "sy": "lambda_",
     "gmc": "lambda_",
+    "gne": "lambda_",
 }
 
 
