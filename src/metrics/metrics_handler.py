@@ -172,22 +172,38 @@ def _run_diversification(
         if precomputed_embeddings is not None
         else precompute_title_embeddings(rankings, diversifier.embedder)
     )
+    # # Only keep random 100 users for testing
+    # import random
 
-    for user_id, (titles, relevance_scores) in rankings.items():
+    # rankings = {
+    #     k: v
+    #     for k, v in rankings.items()
+    #     if k in random.sample(list(rankings.keys()), 10)
+    # }
+    from tqdm import tqdm
+    # Process each user sequentially with progress bar
+    for user_id, (titles, relevance_scores) in tqdm(
+        rankings.items(), desc="Diversifying users"
+    ):
         if len(titles) != len(relevance_scores):
             raise ValueError(
                 f"User {user_id}: Number of titles and relevance scores do not match."
             )
         items = np.array(
-            [[i, title, float(relevance_scores[i])] for i, title in enumerate(titles)],
+            [
+                [i, title, float(score)]
+                for i, (title, score) in enumerate(zip(titles, relevance_scores))
+            ],
             dtype=object,
         )
         diversified_items = diversifier.diversify(
             items, top_k=top_k, title2embedding=title2embedding
         )
-        diversified_titles = diversified_items[:, 1].tolist()
-        diversified_scores = [float(x) for x in diversified_items[:, 2]]
-        diversified_dict[user_id] = (diversified_titles, diversified_scores)
+
+        diversified_dict[user_id] = (
+            diversified_items[:, 1].tolist(),
+            [float(x) for x in diversified_items[:, 2]],
+        )
 
     return diversified_dict
 
