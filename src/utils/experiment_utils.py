@@ -41,6 +41,22 @@ def get_experiment_params(config: dict) -> dict:
         "use_category_ild": config["experiment"].get("use_category_ild", False),
     }
 
+def get_similarity_params(config: dict) -> dict:
+    """
+    Extract and validate similarity parameters from config.
+
+    Args:
+        config (dict): Raw configuration dictionary.
+
+    Returns:
+        dict: Processed similarity parameters including:
+            - use_similarity_scores: Whether to use similarity scores
+            - similarity_scores_path: Path to similarity scores file
+    """
+    return {
+        "use_similarity_scores": config["similarity"]["use_similarity_scores"],
+        "similarity_scores_path": config["similarity"]["similarity_scores_path"],
+    }
 
 def _get_diversifier_class(class_name: str) -> Type:
     """

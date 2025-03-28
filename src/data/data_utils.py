@@ -17,7 +17,7 @@ def load_data_and_convert(data_csv_path: str, mapping_csv_path: str) -> list:
              [pos_item_title, neg_item_title1, neg_item_title2, ...]
     """
     id_to_title = _load_id_to_title_mapping(mapping_csv_path)
-    return _process_data_file(data_csv_path, id_to_title)
+    return _process_data_file(data_csv_path, id_to_title), id_to_title
 
 
 def _load_id_to_title_mapping(mapping_csv_path: str) -> dict:

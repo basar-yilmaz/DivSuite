@@ -5,6 +5,7 @@ from src.utils.experiment_utils import (
     get_experiment_params,
     setup_results_directory,
     initialize_embedder,
+    get_similarity_params,
 )
 from src.metrics.metrics_handler import (
     compute_baseline_metrics,
@@ -37,12 +38,13 @@ def run_diversification_pipeline(config: dict) -> None:
 
     # Initialize experiment
     experiment_params = get_experiment_params(config)
+    similarity_params = get_similarity_params(config)
     results_folder, timestamp = setup_results_directory(
         experiment_params["diversifier_cls"]
     )
 
     # Load data
-    rankings, pos_items, categories_data = load_experiment_data(
+    rankings, pos_items, categories_data, item_id_mapping = load_experiment_data(
         config, experiment_params["use_category_ild"]
     )
 
@@ -57,6 +59,9 @@ def run_diversification_pipeline(config: dict) -> None:
         top_k=experiment_params["top_k"],
         use_category_ild=experiment_params["use_category_ild"],
         categories_data=categories_data,
+        use_similarity_scores=similarity_params["use_similarity_scores"],
+        similarity_scores_path=similarity_params["similarity_scores_path"],
+        item_id_mapping=item_id_mapping,
     )
 
     results = run_diversification_loop(
