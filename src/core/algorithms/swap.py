@@ -13,9 +13,17 @@ class SwapDiversifier(BaseDiversifier):
         self,
         embedder: BaseEmbedder,
         lambda_: float = 0.5,
+        use_similarity_scores: bool = False,
+        item_id_mapping: dict = None,
+        similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl",
     ):
+        super().__init__(
+            embedder=embedder,
+            use_similarity_scores=use_similarity_scores,
+            item_id_mapping=item_id_mapping,
+            similarity_scores_path=similarity_scores_path,
+        )
         self.lambda_ = lambda_
-        self.embedder = embedder
 
     def diversify(
         self,
@@ -38,18 +46,9 @@ class SwapDiversifier(BaseDiversifier):
         # Clamp top_k if necessary
         top_k = min(top_k, num_items)
 
-        # Compute embeddings & similarity
+        # Compute similarity matrix using the base class method
         titles = items[:, 1].tolist()  # item text
-        if title2embedding is not None:
-            # Use precomputed embeddings.
-            try:
-                embeddings = np.stack([title2embedding[title] for title in titles])
-            except KeyError as e:
-                raise ValueError(f"Missing embedding for title: {e}")
-        else:
-            # Fall back to computing embeddings on the fly.
-            embeddings = self.embedder.encode_batch(titles)
-        sim_matrix = compute_pairwise_cosine(embeddings)  # (N, N) in [0,1]
+        sim_matrix = self.compute_similarity_matrix(titles, title2embedding)
 
         # Helper function to compute F(q, R') for a given set of indices
         def score_set(R_indices) -> float:

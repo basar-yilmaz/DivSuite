@@ -25,9 +25,17 @@ class BSwapDiversifier(BaseDiversifier):
         self,
         embedder: BaseEmbedder,
         theta_: float = 0.1,
+        use_similarity_scores: bool = False,
+        item_id_mapping: dict = None,
+        similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl",
     ):
+        super().__init__(
+            embedder=embedder,
+            use_similarity_scores=use_similarity_scores,
+            item_id_mapping=item_id_mapping,
+            similarity_scores_path=similarity_scores_path,
+        )
         self.theta = theta_
-        self.embedder = embedder
 
     def diversify(
         self,
@@ -47,18 +55,9 @@ class BSwapDiversifier(BaseDiversifier):
             return items
         top_k = min(top_k, num_items)
 
-        # 1) Embed items & build similarity matrix
+        # Calculate similarity matrix using the base class method
         titles = items[:, 1].tolist()
-        if title2embedding is not None:
-            # Use precomputed embeddings.
-            try:
-                embeddings = np.stack([title2embedding[title] for title in titles])
-            except KeyError as e:
-                raise ValueError(f"Missing embedding for title: {e}")
-        else:
-            # Fall back to computing embeddings on the fly.
-            embeddings = self.embedder.encode_batch(titles)
-        sim_matrix = compute_pairwise_cosine(embeddings)  # NxN in [0,1]
+        sim_matrix = self.compute_similarity_matrix(titles, title2embedding)
 
         # We treat items[i,2] as the "relevance" = δsim(q, s_i)
         def relevance(i: int) -> float:
