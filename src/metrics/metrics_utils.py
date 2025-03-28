@@ -1,9 +1,118 @@
 """Utilities for computing and evaluating recommendation metrics."""
 
 import numpy as np
+import pickle
 from sklearn.metrics import ndcg_score
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.spatial.distance import pdist
+
+# Cache for storing loaded similarity scores
+_SIMILARITY_SCORES_CACHE = {}
+
+
+def load_similarity_scores(similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl"):
+    """
+    Load similarity scores from file and cache them for future use.
+    
+    Args:
+        similarity_scores_path (str): Path to the pickle file containing precomputed similarity scores.
+        
+    Returns:
+        dict: Dictionary containing similarity scores with integer keys extracted from tensors.
+    """
+    global _SIMILARITY_SCORES_CACHE
+    
+    # Return cached data if already loaded
+    if similarity_scores_path in _SIMILARITY_SCORES_CACHE:
+        return _SIMILARITY_SCORES_CACHE[similarity_scores_path]
+    
+    # Load data from file
+    with open(similarity_scores_path, 'rb') as f:
+        sim_scores = pickle.load(f)
+    
+    # Convert tensor keys to integers for easier lookup
+    lookup_dict = {}
+    for (id1, id2), score in sim_scores.items():
+        # Extract integers from tensors if needed
+        key1 = id1.item() if hasattr(id1, 'item') else id1
+        key2 = id2.item() if hasattr(id2, 'item') else id2
+        lookup_dict[(key1, key2)] = score
+    
+    # Store in cache
+    _SIMILARITY_SCORES_CACHE[similarity_scores_path] = lookup_dict
+    
+    return lookup_dict
+
+
+def compute_average_ild_from_scores(
+    topk_dict: dict, 
+    item_id_mapping: dict, 
+    similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl",
+    topk: int = 5
+) -> float:
+    """
+    Compute the average Intra-List Diversity (ILD) using precomputed pairwise similarity scores.
+    
+    ILD is defined as the average pairwise distance (1 - similarity) over all unique
+    pairs within a user's top-k recommendation list.
+    
+    Args:
+        topk_dict (dict): Dictionary with keys as user IDs and values as tuples of the form
+                         (titles: [str], relevance_scores: [float]).
+        item_id_mapping (dict): Dictionary mapping titles to item IDs.
+        similarity_scores_path (str): Path to the pickle file containing precomputed similarity scores.
+        topk (int, optional): The number of recommendations to consider per user. Defaults to 5.
+    
+    Returns:
+        float: The average ILD value over all users.
+    """
+    # Load similarity scores (uses cache if available)
+    lookup_dict = load_similarity_scores(similarity_scores_path)
+    
+    ild_list = []
+    
+    for user, value in topk_dict.items():
+        titles = value[0] if isinstance(value, tuple) and len(value) >= 1 else value
+        titles = titles[:min(topk, len(titles))]
+        
+        # Convert titles to item IDs
+        item_ids = [item_id_mapping.get(title) for title in titles if title in item_id_mapping]
+        
+        n = len(item_ids)
+        if n <= 1:
+            ild_list.append(0.0)
+            continue
+        
+        # Compute average distance (1 - similarity) for all pairs
+        total_distance = 0.0
+        pair_count = 0
+        
+        for i in range(n):
+            for j in range(i+1, n):
+                id1, id2 = item_ids[i], item_ids[j]
+                
+                # Look up similarity score in both directions
+                sim = lookup_dict.get((id1, id2))
+                if sim is None:
+                    sim = lookup_dict.get((id2, id1))
+                
+                # If similarity score exists, add distance to total
+                if sim is not None:
+                    total_distance += (1.0 - sim)
+                    pair_count += 1
+                else:
+                    # If no similarity score is found, use a default distance of 1.0 (no similarity)
+                    total_distance += 1.0
+                    pair_count += 1
+        
+        # Calculate average ILD for this user
+        if pair_count > 0:
+            ild = total_distance / pair_count
+            ild_list.append(ild)
+        else:
+            ild_list.append(0.0)
+    
+    return np.mean(ild_list)
 
 
 def compute_average_ild_batched(
