@@ -209,11 +209,9 @@ def _run_diversification(
             else precompute_title_embeddings(rankings, diversifier.embedder)
         )
     
-    from tqdm import tqdm
+    # from tqdm import tqdm
     # Process each user sequentially with progress bar
-    for user_id, (titles, relevance_scores) in tqdm(
-        rankings.items(), desc="Diversifying users"
-    ):
+    for user_id, (titles, relevance_scores) in rankings.items():
         if len(titles) != len(relevance_scores):
             raise ValueError(
                 f"User {user_id}: Number of titles and relevance scores do not match."
@@ -357,7 +355,7 @@ def _log_diversification_metrics(
     """Log metrics for the current diversification run."""
     if use_category_ild:
         logger.info(
-            "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
+            "%s=%.3f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
             param_name,
             param_value,
             top_k,
@@ -372,7 +370,7 @@ def _log_diversification_metrics(
         )
     else:
         logger.info(
-            "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f",
+            "%s=%.3f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f",
             param_name,
             param_value,
             top_k,

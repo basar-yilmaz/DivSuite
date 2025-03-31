@@ -16,7 +16,7 @@ class SYDiversifier(BaseDiversifier):
         threshold: float = 0.67,
         use_similarity_scores: bool = False,
         item_id_mapping: dict = None,
-        similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl",
+        similarity_scores_path: str = None,
     ):
         """
         :param embedder: An embedder instance (e.g. STEmbedder or HFEmbedder)

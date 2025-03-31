@@ -18,7 +18,7 @@ class GNEDiversifier(BaseDiversifier):
         imax: int = 10,
         use_similarity_scores: bool = False,
         item_id_mapping: dict = None,
-        similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl",
+        similarity_scores_path: str = None,
     ):
         super().__init__(
             embedder=embedder,

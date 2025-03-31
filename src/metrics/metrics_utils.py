@@ -10,7 +10,7 @@ from scipy.spatial.distance import pdist
 _SIMILARITY_SCORES_CACHE = {}
 
 
-def load_similarity_scores(similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl"):
+def load_similarity_scores(similarity_scores_path: str = None):
     """
     Load similarity scores from file and cache them for future use.
     
@@ -47,7 +47,7 @@ def load_similarity_scores(similarity_scores_path: str = "/mnt/scratch1/byilmaz/
 def compute_average_ild_from_scores(
     topk_dict: dict, 
     item_id_mapping: dict, 
-    similarity_scores_path: str = "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl",
+    similarity_scores_path: str = None,
     topk: int = 5
 ) -> float:
     """
