@@ -14,3 +14,4 @@ saved_embeddings/*
 old/
 .env
 logs*/
+.vscode/
