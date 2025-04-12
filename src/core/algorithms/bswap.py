@@ -39,106 +39,121 @@ class BSwapDiversifier(BaseDiversifier):
 
     def diversify(
         self,
-        items: np.ndarray,  # shape: (N, 3) => [id, title, relevance_score]
+        items: np.ndarray,
         top_k: int = 10,
         title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
-        """
-        :param items: Nx3 array with columns [id, title, relevance_score].
-        :param top_k: result set size k (|R|=k).
-        :return: A subset of items of size k (or fewer if N < k).
-        """
-
         num_items = items.shape[0]
-        if num_items == 0:
-            return items
+        if num_items == 0: return items
         top_k = min(top_k, num_items)
 
-        # Calculate similarity matrix using the base class method
         titles = items[:, 1].tolist()
         sim_matrix = self.compute_similarity_matrix(titles, title2embedding)
 
-        # We treat items[i,2] as the "relevance" = δsim(q, s_i)
         def relevance(i: int) -> float:
             return float(items[i, 2])
 
-        # sum of pairwise (1 - sim) for the entire set R
-        def diversity_of_set(R_set) -> float:
-            R_list = list(R_set)
-            div_val = 0.0
-            for i in range(len(R_list)):
-                for j in range(i + 1, len(R_list)):
-                    div_val += 1.0 - sim_matrix[R_list[i], R_list[j]]
-            return div_val
+        # --- Pre-computation & Initial Greedy Phase ---
+        all_indices = list(range(num_items))
+        all_indices.sort(key=lambda i: relevance(i), reverse=True)
 
-        # diversity contribution of a single item s_i in R
-        # sum(1 - sim(i,j)) for j in R, j != i
-        def div_contribution(R_set, i: int) -> float:
+        R_set = set(all_indices[:top_k])
+        # S_indices sorted by relevance descending
+        S_indices = all_indices[top_k:]
+
+        if len(R_set) < 1 or len(S_indices) < 1:
+            final_indices = list(R_set)
+            # final_indices.sort(key=lambda i: relevance(i), reverse=True) # Optional sort
+            return items[final_indices] if final_indices else np.array([])
+
+
+        # --- Helper for Diversity Contribution (O(k)) ---
+        def get_div_contribution(target_set, item_idx, sim_matrix):
             contrib = 0.0
-            for j in R_set:
-                if j != i:
-                    contrib += 1.0 - sim_matrix[i, j]
+            for j in target_set:
+                if item_idx != j:
+                    # Ensure indices are valid for sim_matrix if sparse
+                    contrib += 1.0 - sim_matrix[item_idx, j]
             return contrib
 
-        # all candidate indices
-        S = set(range(num_items))
-        R = set()
+        # --- Store current contributions for O(k) updates ---
+        # O(k^2) initial calculation
+        div_contributions = {r: get_div_contribution(R_set, r, sim_matrix) for r in R_set}
 
-        # 2) While |R| < k, pick s_s from S with the highest relevance, move it to R
-        while len(R) < top_k and len(S) > 0:
-            s_s = max(S, key=lambda idx: relevance(idx))  # highest rel
-            S.remove(s_s)
-            R.add(s_s)
+        # --- Find initial s_d (O(k) after contributions are known) ---
+        def find_s_d(current_R_set, current_contributions):
+             if not current_R_set: return -1 # Should not happen if k >= 1
+             # Find item in R with the minimum contribution
+             min_contrib = float('inf')
+             s_d_cand = -1
+             for r_item in current_R_set:
+                 if current_contributions[r_item] < min_contrib:
+                     min_contrib = current_contributions[r_item]
+                     s_d_cand = r_item
+                 # Tie-breaking (optional): could add secondary sort key like relevance if needed
+                 # elif current_contributions[r_item] == min_contrib:
+                     # handle tie if necessary, e.g., pick lower relevance one?
+             return s_d_cand
+             # Alternatively: return min(current_R_set, key=lambda r: current_contributions[r])
 
-        # if we already have k items or S is empty, we skip the BSWAP loop
-        if len(R) < 1 or len(S) < 1:
-            # Return in descending relevance order
-            final_indices = list(R)
-            final_indices.sort(key=lambda i: relevance(i), reverse=True)
-            return items[final_indices]
+        s_d = find_s_d(R_set, div_contributions)
+        if s_d == -1: # Handle empty R case if it arises
+             return items[list(R_set)]
 
-        # 3) s_d = argmin_{ si in R } divContribution(R, si)
-        def pick_s_d(R_set):
-            return min(R_set, key=lambda x: div_contribution(R_set, x))
 
-        s_d = pick_s_d(R)
+        # --- BSWAP Loop (Optimized) ---
+        s_idx_in_S = 0 # Pointer to the next s_s in sorted S_indices
+        while s_idx_in_S < len(S_indices):
+            s_s = S_indices[s_idx_in_S]
 
-        # 4) s_s = argmax_{ si in S } relevance
-        def pick_s_s(S_set):
-            return max(S_set, key=lambda x: relevance(x))
-
-        s_s = pick_s_s(S)
-        S.remove(s_s)
-
-        # 5) while deltaSim(q, s_d) - deltaSim(q, s_s) <= theta and |S|>0 do ...
-        while (relevance(s_d) - relevance(s_s) <= self.theta) and len(S) >= 0:
-            # if div( (R \ s_d) U { s_s } ) > div(R) then R = ...
-            old_div = diversity_of_set(R)
-            R_candidate = set(R)
-            R_candidate.remove(s_d)
-            R_candidate.add(s_s)
-
-            new_div = diversity_of_set(R_candidate)
-            if new_div > old_div:
-                R = R_candidate
-                # update s_d
-                if len(R) > 0:
-                    s_d = pick_s_d(R)
-                else:
-                    break
-
-            # pick a new s_s from S if any left
-            if len(S) == 0:
-                break
-            s_s = pick_s_s(S)
-            S.remove(s_s)
-
-            # re-check the condition
+            # Check loop condition
             if relevance(s_d) - relevance(s_s) > self.theta:
-                # condition fails => break
-                break
+                break # Relevance drop too large, stop swapping
 
-        # Done. Return R in descending relevance order
-        final_indices = list(R)
+            # --- Calculate Diversity Delta (O(k)) ---
+            # Contribution s_s would have with elements currently in R (excluding s_d)
+            contrib_ss_with_R_minus_sd = 0.0
+            for r in R_set:
+                if r != s_d:
+                    contrib_ss_with_R_minus_sd += (1.0 - sim_matrix[s_s, r])
+
+            # Contribution s_d currently has with elements in R (excluding s_d)
+            # This is simply the stored div_contribution of s_d
+            contrib_sd_with_R_minus_sd = div_contributions[s_d]
+
+            delta_div = contrib_ss_with_R_minus_sd - contrib_sd_with_R_minus_sd
+
+            # --- Perform Swap if beneficial ---
+            if delta_div > 1e-9: # Use tolerance for float comparison
+                # Swap occurs
+                R_set.remove(s_d)
+                R_set.add(s_s)
+
+                # --- Update contributions incrementally (O(k)) ---
+                old_sd_contrib = div_contributions.pop(s_d) # Remove old s_d
+
+                # Update contributions of remaining items r in R
+                for r in R_set:
+                    if r != s_s: # Don't update the newly added item yet
+                        # remove effect of s_d, add effect of s_s
+                        sim_r_sd = sim_matrix[r, s_d]
+                        sim_r_ss = sim_matrix[r, s_s]
+                        div_contributions[r] = div_contributions[r] - (1.0 - sim_r_sd) + (1.0 - sim_r_ss)
+
+                # Calculate contribution for the new item s_s
+                div_contributions[s_s] = get_div_contribution(R_set, s_s, sim_matrix)
+
+                # Find the new s_d based on updated contributions (O(k))
+                s_d = find_s_d(R_set, div_contributions)
+                if s_d == -1: break # Should not happen
+
+            # --- Move to next candidate s_s ---
+            s_idx_in_S += 1
+            # s_d remains the same if no swap occurred
+
+        # --- Return final result ---
+        final_indices = list(R_set)
+        # Optional: Sort final list by relevance if desired, BSWAP doesn't guarantee order
+        # final_indices.sort(key=lambda i: relevance(i), reverse=True)
         return items[final_indices]
