@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple, Any
 from src.data.data_utils import create_relevance_lists
 from src.metrics.metrics_utils import (
     compute_average_ild_batched,
+    compute_average_ild_from_scores,
     compute_average_category_ild_batched,
     evaluate_recommendation_metrics,
 )
@@ -22,6 +23,9 @@ def compute_baseline_metrics(
     top_k: int,
     use_category_ild: bool,
     categories_data: Any,
+    use_similarity_scores: bool = False,
+    similarity_scores_path: str = None,
+    item_id_mapping: Dict[str, int] = None,
 ) -> Dict[str, Any]:
     """
     Compute baseline metrics for non-diversified rankings.
@@ -33,22 +37,34 @@ def compute_baseline_metrics(
         top_k: Number of top items to consider.
         use_category_ild: Whether to compute category-based ILD.
         categories_data: Category information if use_category_ild is True.
+        use_similarity_scores: Whether to use precomputed similarity scores for ILD calculation.
+        similarity_scores_path: Path to precomputed similarity scores.
+        item_id_mapping: Mapping from titles to item IDs if use_similarity_scores is True.
 
     Returns:
         dict: Baseline metrics including NDCG, MRR, ILD, and precomputed embeddings.
     """
     baseline_relevance = create_relevance_lists(rankings, pos_items)
-    baseline_prec, baseline_rec, baseline_hit, baseline_ndcg, baseline_mrr = (
+    _, _, _, baseline_ndcg, baseline_mrr = (
         evaluate_recommendation_metrics(baseline_relevance, top_k)
     )
 
-    precomputed_embeddings = precompute_title_embeddings(rankings, embedder)
-    baseline_emb_ild = compute_average_ild_batched(
-        rankings,
-        embedder,
-        topk=top_k,
-        precomputed_embeddings=precomputed_embeddings,
-    )
+    precomputed_embeddings = None
+    if not use_similarity_scores:
+        precomputed_embeddings = precompute_title_embeddings(rankings, embedder)
+        baseline_emb_ild = compute_average_ild_batched(
+            rankings,
+            embedder,
+            topk=top_k,
+            precomputed_embeddings=precomputed_embeddings,
+        )
+    else:
+        baseline_emb_ild = compute_average_ild_from_scores(
+            rankings,
+            {v: k for k, v in item_id_mapping.items()},
+            similarity_scores_path=similarity_scores_path,
+            topk=top_k,
+        )
 
     baseline_cat_ild = None
     if use_category_ild:
@@ -73,6 +89,9 @@ def compute_baseline_metrics(
         "emb_ild": baseline_emb_ild,
         "cat_ild": baseline_cat_ild,
         "precomputed_embeddings": precomputed_embeddings,
+        "use_similarity_scores": use_similarity_scores,
+        "item_id_mapping": item_id_mapping,
+        "similarity_scores_path": similarity_scores_path,
     }
 
 
@@ -112,9 +131,19 @@ def run_diversification_loop(
             param_value,
         )
 
+        diversifier_kwargs = {experiment_params["diversifier_param_name"]: param_value}
+        
+        # Add item_id_mapping and similarity_scores_path if using similarity scores
+        if baseline_metrics.get("use_similarity_scores", False):
+            diversifier_kwargs.update({
+                "item_id_mapping": {v: k for k, v in baseline_metrics["item_id_mapping"].items()},
+                "similarity_scores_path": baseline_metrics["similarity_scores_path"],
+                "use_similarity_scores": True
+            })
+
         diversifier = experiment_params["diversifier_cls"](
             embedder=embedder,
-            **{experiment_params["diversifier_param_name"]: param_value},
+            **diversifier_kwargs
         )
 
         diversified_results = _run_diversification(
@@ -167,24 +196,22 @@ def _run_diversification(
         dict: Diversified rankings dictionary.
     """
     diversified_dict = {}
-    title2embedding = (
-        precomputed_embeddings
-        if precomputed_embeddings is not None
-        else precompute_title_embeddings(rankings, diversifier.embedder)
-    )
-    # # Only keep random 100 users for testing
-    # import random
-
-    # rankings = {
-    #     k: v
-    #     for k, v in rankings.items()
-    #     if k in random.sample(list(rankings.keys()), 10)
-    # }
-    from tqdm import tqdm
+    
+    # Check if using similarity scores instead of embeddings
+    use_similarity_scores = getattr(diversifier, 'use_similarity_scores', False)
+    
+    # Only precompute embeddings if not using similarity scores
+    title2embedding = None
+    if not use_similarity_scores and hasattr(diversifier, 'embedder'):
+        title2embedding = (
+            precomputed_embeddings
+            if precomputed_embeddings is not None
+            else precompute_title_embeddings(rankings, diversifier.embedder)
+        )
+    
+    # from tqdm import tqdm
     # Process each user sequentially with progress bar
-    for user_id, (titles, relevance_scores) in tqdm(
-        rankings.items(), desc="Diversifying users"
-    ):
+    for user_id, (titles, relevance_scores) in rankings.items():
         if len(titles) != len(relevance_scores):
             raise ValueError(
                 f"User {user_id}: Number of titles and relevance scores do not match."
@@ -196,9 +223,14 @@ def _run_diversification(
             ],
             dtype=object,
         )
-        diversified_items = diversifier.diversify(
-            items, top_k=top_k, title2embedding=title2embedding
-        )
+        
+        # Call diversify with or without embeddings
+        if use_similarity_scores:
+            diversified_items = diversifier.diversify(items, top_k=top_k)
+        else:
+            diversified_items = diversifier.diversify(
+                items, top_k=top_k, title2embedding=title2embedding
+            )
 
         diversified_dict[user_id] = (
             diversified_items[:, 1].tolist(),
@@ -223,12 +255,20 @@ def _compute_and_log_metrics(
         relevance_lists_div, experiment_params["top_k"]
     )
 
-    emb_ild = compute_average_ild_batched(
-        diversified_results,
-        diversifier.embedder,
-        topk=experiment_params["top_k"],
-        precomputed_embeddings=baseline_metrics["precomputed_embeddings"],
-    )
+    if baseline_metrics.get("use_similarity_scores", False):
+        emb_ild = compute_average_ild_from_scores(
+            diversified_results,
+            {v: k for k, v in baseline_metrics["item_id_mapping"].items()},
+            similarity_scores_path=baseline_metrics["similarity_scores_path"],
+            topk=experiment_params["top_k"],
+        )
+    else:
+        emb_ild = compute_average_ild_batched(
+            diversified_results,
+            diversifier.embedder,
+            topk=experiment_params["top_k"],
+            precomputed_embeddings=baseline_metrics["precomputed_embeddings"],
+        )
 
     cat_ild = None
     if experiment_params["use_category_ild"]:
@@ -315,7 +355,7 @@ def _log_diversification_metrics(
     """Log metrics for the current diversification run."""
     if use_category_ild:
         logger.info(
-            "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
+            "%s=%.3f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
             param_name,
             param_value,
             top_k,
@@ -330,7 +370,7 @@ def _log_diversification_metrics(
         )
     else:
         logger.info(
-            "%s=%.2f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f",
+            "%s=%.3f: NDCG@%d=%.4f (%.2f%% decrease), MRR@%d=%.4f, Emb-ILD@%d=%.4f",
             param_name,
             param_value,
             top_k,

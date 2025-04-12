@@ -34,6 +34,8 @@ diversification/
   - MaxSum (lambda parameter)
   - Swap (theta parameter)
   - SY (lambda parameter)
+  - GNE (lambda parameter, alpha parameter, imax integer)
+  - GMC (lambda parameter)
 - Configurable via YAML and command-line arguments
 - Automatic parameter sweep with early stopping based on NDCG drop
 - Metrics tracking and visualization
@@ -74,37 +76,51 @@ The experiment can be configured through:
 
 ### YAML Configuration
 
-There are two ways to configure the experiments:
+The primary configuration is done via a YAML file (default: `config.yaml`). Here's a breakdown of the sections and parameters:
 
-1. **Single Algorithm Configuration** (`config.yaml`):
-```yaml
-# Data paths
-data:
-  base_path: "topk_data/movielens"
-  item_mappings: "target_item_mapping.csv"
-  test_samples: "test_samples.csv"
-  topk_list: "ml-topk_iid_list.pkl"
-  topk_scores: "ml-topk_score.pkl"
-  movie_categories: "movie_categories.csv"  # Optional: only for category-based ILD
+1.  **`data` Section:** Defines paths to your dataset files.
+    ```yaml
+    data:
+      base_path: "topk_data/movielens"  # Base directory for dataset files
+      item_mappings: "target_item_mapping.csv" # Maps internal item IDs to external IDs (e.g., product names, movie titles)
+      test_samples: "test_samples.csv" # Contains test user interactions (user_id, positive_item_id, list_of_negative_item_ids)
+      topk_list: "ml-topk_iid_list.pkl" # Pre-computed top-K item lists (internal IDs) for each test user
+      topk_scores: "ml-topk_score.pkl" # Scores corresponding to the items in topk_list
+      movie_categories: "movie_categories.csv" # Optional: Maps item IDs to categories (e.g., genres) for category-based ILD calculation
+    ```
+    *   **To use a new dataset:** Create a similar directory structure (e.g., `topk_data/my_new_dataset/`) with corresponding files and update the `base_path` and potentially other filenames in this section.
 
-# Embedder settings
-embedder:
-  model_name: "all-MiniLM-L6-v2" # pick an embedding model
-  device: "cuda"  # or "cpu"
-  batch_size: 40960
+2.  **`embedder` Section:** Configures the sentence transformer model used for calculating item similarity (used in ILD).
+    ```yaml
+    embedder:
+      model_name: "all-MiniLM-L6-v2" # Name of the Sentence Transformer model (from Hugging Face Hub)
+      device: "cuda"                  # Device for embedding computation ("cuda" or "cpu")
+      batch_size: 40960               # Batch size for embedding generation (adjust based on GPU memory)
+    ```
 
-# Experiment parameters
-experiment:
-  diversifier: "sy"  # Options: motley, mmr, bswap, clt, msd, swap, sy
-  param_name: "threshold"   # Auto-set based on diversifier if not specified
-  param_start: 1.0
-  param_end: 0.0
-  param_step: -0.05
-  threshold_drop: 0.1   # Stop when NDCG drops by this percentage
-  top_k: 10
-  use_category_ild: true  # Optional: enable category-based ILD metric ( this is valid only if we have item_id to category mapping)
+3.  **`experiment` Section:** Controls the diversification process and evaluation.
+    ```yaml
+    experiment:
+      diversifier: "sy"         # Algorithm to use: motley, mmr, bswap, clt, msd (MaxSum), swap, sy
+      param_name: "threshold"   # Name of the primary parameter for the chosen diversifier (auto-detected if omitted, e.g., "lambda_" for MMR, "theta_" for Motley)
+      param_start: 1.0          # Starting value for the parameter sweep
+      param_end: 0.0            # Ending value for the parameter sweep
+      param_step: -0.05         # Step size for the parameter sweep (can be negative for decreasing sweeps like SY)
+      threshold_drop: 0.1       # Early stopping criterion: stop if NDCG drops by this fraction (e.g., 0.1 = 10%) compared to the initial (highest) NDCG
+      top_k: 10                 # Size of the final diversified list to evaluate (e.g., NDCG@10)
+      use_category_ild: true    # Optional (default: false): If true and `movie_categories` is provided, calculate ILD based on item categories instead of embeddings. Requires the `data.movie_categories` file.
+      # For CLT algorithm specifically:
+      # pick_strategy: "medoid" # or "highest_relevance" - How to pick representative items for clusters
+    ```
 
-```
+4.  **`similarity` Section (Optional):** Allows using pre-computed item similarity scores instead of calculating them on-the-fly using the embedder. This can significantly speed up repeated experiments if the item set and embeddings are fixed.
+    ```yaml
+    similarity:
+      use_similarity_scores: false  # Set to true to load similarities from the specified file
+      similarity_scores_path: "/path/to/your/similarity_results.pkl" # Path to a .pkl file containing pre-computed similarities
+    ```
+    *   The `.pkl` file should typically contain a data structure (like a dictionary or a NumPy array) representing the similarity matrix between items.
+    *   When `use_similarity_scores` is `true`, the `embedder` settings are ignored for ILD calculation.
 
 ### Algorithm Parameters
 
@@ -131,6 +147,14 @@ Each diversification algorithm has specific parameters:
   
 - **SY**: Uses `threshold` parameter (1.0 to 0.0, decreasing)
   - Lower values increase diversity threshold
+
+- **GNE**: Uses `lambda_` (0.0 to 1.0), `alpha` (0.0 to 1.0), and `imax` (integer > 0) parameters.
+  - `lambda_`: Balances relevance (higher) and diversity (lower).
+  - `alpha`: Controls randomness in candidate selection (0 = greedy, 1 = fully random within bounds).
+  - `imax`: Number of GRASP iterations to run.
+
+- **GMC**: Uses `lambda_` parameter (0.0 to 1.0).
+  - Higher values prioritize relevance over diversity.
 
 ### Command-line Arguments
 
@@ -204,7 +228,7 @@ The experiment produces:
    - ILD values on right y-axis (orange)
    - Parameter values on x-axis
 
-Results are saved in `results_{algorithm}/` directory with timestamp-based filenames.
+Results are saved in `results/{algorithm}_{timestamp}/` directory.
 
 ## Example Usage
 
@@ -218,7 +242,12 @@ Run MMR diversification with custom parameters:
 python main.py --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1 --threshold_drop 0.02
 ```
 
-Run multiple algorithms sequentially (not working):
+Run using a specific dataset configuration by pointing to its base path:
+```bash
+python main.py --data_path topk_data/amazon14
+```
+
+Run multiple algorithms sequentially:
 ```bash
 for alg in motley mmr bswap clt msd swap sy; do
     python main.py --diversifier $alg
