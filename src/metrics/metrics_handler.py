@@ -9,8 +9,8 @@ from src.metrics.metrics_utils import (
     compute_average_ild_from_scores,
     compute_average_category_ild_batched,
     evaluate_recommendation_metrics,
+    precompute_title_embeddings,
 )
-from src.utils.utils import precompute_title_embeddings
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)

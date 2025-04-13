@@ -7,8 +7,8 @@ In order to implement a new diversifier, you need extend this class and implemen
 
 from abc import ABC, abstractmethod
 import numpy as np
-from src.utils.utils import compute_pairwise_cosine
 from src.metrics.metrics_utils import load_similarity_scores
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 class BaseDiversifier(ABC):
@@ -90,7 +90,7 @@ class BaseDiversifier(ABC):
                     )
                 embeddings = self.embedder.encode_batch(titles)
 
-            sim_matrix = compute_pairwise_cosine(embeddings)
+            sim_matrix = cosine_similarity(embeddings)
 
         return sim_matrix
 

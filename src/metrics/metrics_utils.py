@@ -247,3 +247,29 @@ def compute_average_category_ild_batched(
         ild_list.append(ild)
 
     return np.mean(ild_list) if ild_list else 0.0
+
+
+def precompute_title_embeddings(rankings: dict, embedder) -> dict:
+    """
+    Precompute embeddings for all unique titles (from each user's full recommendation list)
+    and return a mapping from title to embedding.
+
+    Parameters:
+        rankings (dict): {user_id: (titles: [str], relevance_scores: [float]), ...}.
+        embedder: An instance with an encode_batch(list_of_titles) method.
+
+    Returns:
+        dict: Mapping from title (str) to its embedding (np.ndarray).
+    """
+    unique_titles = set()
+    for user_id, (titles, _) in rankings.items():
+        unique_titles.update(titles)  # use all items, not just top_k items.
+    unique_titles = list(unique_titles)
+
+    print(f"Computing embeddings for {len(unique_titles)} unique titles.")
+
+    # Compute embeddings for all unique titles in one large batch.
+    embeddings = embedder.encode_batch(unique_titles)
+
+    # Return a mapping from title to embedding.
+    return dict(zip(unique_titles, embeddings))

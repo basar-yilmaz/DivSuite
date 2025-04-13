@@ -3,6 +3,7 @@
 import pickle
 from pathlib import Path
 from typing import Tuple, Dict, List, Any
+import os
 
 from src.data.data_utils import load_data_and_convert
 from src.data.category_utils import load_movie_categories
@@ -34,7 +35,24 @@ def load_experiment_data(
     # Load category data if needed
     categories_data = None
     if use_category_ild:
-        categories_path = data_path / config["data"]["movie_categories"]
+        category_path_str = config["data"].get("movie_categories")
+        if not category_path_str:
+            raise ValueError(
+                "Configuration error: 'use_category_ild' is true, but 'movie_categories' path is missing or empty in config['data']."
+            )
+
+        categories_path = data_path / category_path_str
+
+        if not os.path.exists(categories_path):
+            raise FileNotFoundError(
+                f"Configuration error: Movie categories file not found at '{categories_path}'. "
+                f"'use_category_ild' is true, but the specified file does not exist."
+            )
+        if not os.path.isfile(categories_path):
+            raise ValueError(
+                f"Configuration error: Path specified for 'movie_categories' is not a file: '{categories_path}'."
+            )
+
         categories_data = load_movie_categories(str(categories_path))
         logger.info("Loaded category data")
 
