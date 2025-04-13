@@ -44,29 +44,61 @@ diversification/
 
 ## Setup
 
-1. Install dependencies:
+The recommended way to set up the development environment is using the provided script:
+
+1.  **Run the setup script:**
+    ```bash
+    source setup.sh
+    ```
+    This script performs the following steps:
+    *   Checks if Python 3.10 or higher is installed.
+    *   Installs `uv` (a fast Python package installer and resolver) if it's not found.
+    *   Installs `pre-commit` (for code quality checks) if it's not found.
+    *   Creates a virtual environment named `.venv` using `uv`.
+    *   Installs all project dependencies (including development and optional extras) into the virtual environment using `uv sync`.
+    *   Installs pre-commit hooks to ensure code quality before commits.
+    *   **Activates the virtual environment.** You should see `(divsuite_env)` in your shell prompt.
+
+2.  **Prepare your data:** (This step remains the same)
+    Ensure your data is structured as described below in the `topk_data/` directory (e.g., `topk_data/movielens/` or `topk_data/amazon14/`). Update the `config.yaml` or use command-line arguments if your file names differ.
+    ```
+    topk_data/your_dataset_name/
+    ├── target_item_mapping.csv # Maps internal item IDs to external IDs
+    ├── test_samples.csv        # User interaction samples (user_id, pos_item, neg_items)
+    ├── your-prefix_iid_list.pkl # Top-K item lists (internal IDs) per user
+    ├── your-prefix_score.pkl    # Scores for the items in the top-K lists
+    ├── your_categories.csv     # Category mapping file (necessary for Cat-ILD, otherwise unnecessary)
+    └── can be expanded...
+
+    ```
+    *Note: File names like `target_item_mapping.csv`, `test_samples.csv`, `ml-topk_iid_list.pkl`, `ml-topk_score.pkl` are configurable in your YAML file or via CLI arguments.*
+
+## Running Experiments
+
+After running `source setup.sh`, the virtual environment (`divsuite_env`) will be active in your current shell session. You can then run the main script directly:
+
 ```bash
-pip install numpy pandas matplotlib pyyaml sentence-transformers
+python main.py [arguments...]
 ```
 
-2. Prepare your data in the following structure:
-```
-topk_data/amazon14/
-├── target_item_mapping.csv
-├── amz_14_final_samples.csv
-├── amz-topk_iid_list.pkl
-└── amz-topk_score.pkl
+Alternatively, if you open a new shell or deactivate the environment, you can use `uv run` which automatically executes commands within the project's virtual environment without needing to activate it manually first:
 
-OR
-
-topk_data/movielens/
-├── target_item_mapping.csv (This is a mapping file from internal IDs to externals)
-├── test_samples.csv        (user_id, pos_item, neg_items samples file)
-├── ml-topk_iid_list.pkl    (internal top-k item IDs for each test user)
-└── ml-topk_score.pkl       (scores of the items in the top-k list of each user)
+```bash
+uv run python main.py [arguments...]
 ```
 
-This file names can be set in the config file.
+**Example:**
+
+Run MMR diversification with custom parameters using the activated environment:
+```bash
+# Ensure (divsuite_env) is active (run 'source setup.sh' if not)
+python main.py --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1 --threshold_drop 0.02
+```
+
+Or using `uv run`:
+```bash
+uv run python main.py --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1 --threshold_drop 0.02
+```
 
 ## Configuration
 
@@ -176,11 +208,13 @@ Available arguments:
    - Running experiments with a single algorithm
    - Quick testing or parameter tuning
    - Need to enable/disable category-based ILD
+   - Storing default dataset paths
 
 2. Use command-line arguments when:
    - Quick parameter overrides without editing config files
-   - Running experiments in scripts/loops
+   - Running experiments in scripts/loops (e.g., iterating through algorithms)
    - CI/CD pipelines
+   - Temporarily pointing to a different dataset (`--data_path`)
 
 ## Module Overview
 
@@ -213,43 +247,47 @@ Available arguments:
 
 The experiment produces:
 
-1. Real-time logging of metrics for each parameter value
-2. Tab-separated CSV file with metrics:
-   - Parameter value
-   - NDCG
-   - NDCG drop percentage
-   - ILD
-   - Hit Rate
-   - Recall
-   - Precision
+1. Real-time logging of metrics for each parameter value to the console.
+2. A tab-separated values (TSV) file with detailed metrics for each parameter step, saved in the results directory. The columns typically include:
+   - Parameter value (e.g., `lambda_`, `theta_`)
+   - NDCG@k (Normalized Discounted Cumulative Gain)
+   - ILD (Intra-List Diversity, either embedding-based or category-based)
+   - Optionally other metrics like Hit Rate, Recall, Precision.
+3. A visualization plot (`.png`) showing NDCG and ILD against the parameter values, saved in the results directory.
 
-3. Visualization plot showing:
-   - NDCG values on left y-axis (blue)
-   - ILD values on right y-axis (orange)
-   - Parameter values on x-axis
+Results are saved in a timestamped directory structure like `results/{algorithm_name}_{timestamp}/`. For example: `results/mmr_20240726_103000/`.
 
-Results are saved in `results/{algorithm}_{timestamp}/` directory.
+## Example Usage (Revisited)
 
-## Example Usage
-
-Basic run with default settings:
+**Basic run (uses defaults from `config.yaml`):**
 ```bash
+# Activate env first: source setup.sh
 python main.py
+# OR using uv:
+uv run python main.py
 ```
 
-Run MMR diversification with custom parameters:
+**Run MMR diversification with custom parameters and specify the dataset:**
 ```bash
-python main.py --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1 --threshold_drop 0.02
+# Activate env first: source setup.sh
+python main.py --data_path topk_data/amazon14 --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1
+# OR using uv:
+uv run python main.py --data_path topk_data/amazon14 --diversifier mmr --param_start 0.1 --param_end 0.9 --param_step 0.1
 ```
 
-Run using a specific dataset configuration by pointing to its base path:
+**Run multiple algorithms sequentially using a loop (example for bash/zsh):**
 ```bash
-python main.py --data_path topk_data/amazon14
-```
-
-Run multiple algorithms sequentially:
-```bash
+# Activate env first: source setup.sh
 for alg in motley mmr bswap clt msd swap sy; do
-    python main.py --diversifier $alg
+    echo "Running experiment for: $alg"
+    python main.py --diversifier $alg --data_path topk_data/movielens # Add other params as needed
+    echo "--------------------------------------"
+done
+
+# OR using uv run inside the loop:
+for alg in motley mmr bswap clt msd swap sy; do
+    echo "Running experiment for: $alg"
+    uv run python main.py --diversifier $alg --data_path topk_data/movielens # Add other params as needed
+    echo "--------------------------------------"
 done
 ```
