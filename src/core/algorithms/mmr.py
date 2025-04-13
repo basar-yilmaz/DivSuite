@@ -44,31 +44,29 @@ class MMRDiversifier(BaseDiversifier):
 
         selected_indices = [0]  # Pick the most relevant item
 
+        # --- MMR Selection Loop ---
         while len(selected_indices) < top_k:
-            best_candidate = None
-            best_score = -np.inf
-
-            for i in range(len(items)):
-                if i in selected_indices:
-                    continue
-
-                # Relevance term
-                relevance = (1 - self.lambda_) * float(items[i, 2])
-
-                # Diversity term
-                diversity_sum = sum((1 - sim_matrix[i, j]) for j in selected_indices)
-                diversity_term = (self.lambda_ / len(selected_indices)) * diversity_sum
-
-                # MMR score as per the formula
-                mmr_score = relevance + diversity_term
-
-                if mmr_score > best_score:
-                    best_score = mmr_score
-                    best_candidate = i
-
-            if best_candidate is None:
+            unselected_mask = np.ones(len(items), dtype=bool)
+            unselected_mask[selected_indices] = False
+            unselected = np.where(unselected_mask)[0]
+            
+            # If no candidates remain, exit the loop
+            if unselected.size == 0:
                 break
 
+            # Vectorize relevance computation for unselected items:
+            relevance_candidates = (1 - self.lambda_) * items[unselected, 2].astype(float)
+
+            # Vectorize diversity: sum (1 - similarity) for each candidate over currently selected items
+            diversity_candidates = (self.lambda_ / len(selected_indices)) * \
+                np.sum(1 - sim_matrix[unselected][:, selected_indices], axis=1)
+
+            # Compute the final MMR scores for the unselected candidates
+            mmr_scores = relevance_candidates + diversity_candidates
+
+            # Select the candidate with the highest score
+            best_candidate = unselected[np.argmax(mmr_scores)]
             selected_indices.append(best_candidate)
+
 
         return items[selected_indices]
