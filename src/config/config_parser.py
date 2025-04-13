@@ -55,6 +55,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model_name", type=str, help="Name of the embedding model")
     parser.add_argument("--device", type=str, help="Device to run embedder on")
     parser.add_argument("--batch_size", type=int, help="Batch size for embedder")
+    parser.add_argument(
+        "--use_precomputed_embeddings",
+        action="store_true",
+        help="Whether to use precomputed embeddings",
+    )
+    parser.add_argument(
+        "--precomputed_embeddings_path",
+        type=str,
+        help="Path to precomputed embeddings file",
+    )
 
     # Experiment parameters
     parser.add_argument(
@@ -116,6 +126,14 @@ def merge_configs(
         config["embedder"]["device"] = args.device
     if args.batch_size:
         config["embedder"]["batch_size"] = args.batch_size
+    if args.use_precomputed_embeddings:
+        config["embedder"]["use_precomputed_embeddings"] = (
+            args.use_precomputed_embeddings
+        )
+    if args.precomputed_embeddings_path:
+        config["embedder"]["precomputed_embeddings_path"] = (
+            args.precomputed_embeddings_path
+        )
 
     # Update experiment parameters if provided in args
     if args.diversifier:
@@ -208,6 +226,32 @@ def get_config() -> Dict[str, Any]:
                 f"'use_similarity_scores' is set to true, but the specified file does not exist. "
                 f"Please check the path in your config file ('{args.config}') or provide the correct path via command line arguments."
             )
+    if final_config.get("embedder", {}).get("use_precomputed_embeddings"):
+        precomputed_embeddings_path_key = final_config.get("embedder", {}).get(
+            "precomputed_embeddings_path"
+        )
+        if not precomputed_embeddings_path_key:
+            raise ValueError(
+                "Configuration error: 'use_precomputed_embeddings' is true but 'precomputed_embeddings_path' is not provided in config['embedder']."
+            )
+        full_precomputed_embeddings_path = os.path.join(
+            base_path, precomputed_embeddings_path_key
+        )
+        if not os.path.exists(full_precomputed_embeddings_path):
+            raise FileNotFoundError(
+                f"Configuration error: Precomputed embeddings file not found: {full_precomputed_embeddings_path}. "
+                f"'use_precomputed_embeddings' is set to true, but the specified file does not exist. "
+                f"Please check the path in your config file ('{args.config}') or provide the correct path via command line arguments."
+            )
     # --- End Added Path Checks ---
+
+    # Use similarity and use precomputed embeddings flag cannot be true at the same time.
+    if final_config.get("similarity", {}).get(
+        "use_similarity_scores"
+    ) and final_config.get("embedder", {}).get("use_precomputed_embeddings"):
+        raise ValueError(
+            "Configuration error: 'use_similarity_scores' and 'use_precomputed_embeddings' cannot be true at the same time."
+        )
+    # --- End Added Flag Checks ---
 
     return final_config

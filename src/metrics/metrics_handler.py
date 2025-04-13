@@ -19,13 +19,14 @@ logger = get_logger(__name__)
 def compute_baseline_metrics(
     rankings: Dict[int, Tuple[List[str], List[float]]],
     pos_items: List[str],
-    embedder: Any,
-    top_k: int,
-    use_category_ild: bool,
-    categories_data: Any,
+    embedder: Any = None,
+    top_k: int = 10,
+    use_category_ild: bool = False,
+    categories_data: Any = None,
     use_similarity_scores: bool = False,
     similarity_scores_path: str = None,
     item_id_mapping: Dict[str, int] = None,
+    embedding_params: dict = None,
 ) -> Dict[str, Any]:
     """
     Compute baseline metrics for non-diversified rankings.
@@ -40,6 +41,7 @@ def compute_baseline_metrics(
         use_similarity_scores: Whether to use precomputed similarity scores for ILD calculation.
         similarity_scores_path: Path to precomputed similarity scores.
         item_id_mapping: Mapping from item ID to title if use_similarity_scores is True.
+        embedding_params: Embedding parameters (use_precomputed_embeddings: bool, precomputed_embeddings_path: str).
 
     Returns:
         dict: Baseline metrics including NDCG, MRR, ILD, and precomputed embeddings.
@@ -65,7 +67,9 @@ def compute_baseline_metrics(
             topk=top_k,
         )
     else:
-        precomputed_embeddings = precompute_title_embeddings(rankings, embedder)
+        precomputed_embeddings = precompute_title_embeddings(
+            rankings, embedder, embedding_params
+        )
         baseline_emb_ild = compute_average_ild_batched(
             rankings,
             embedder,
@@ -215,12 +219,8 @@ def _run_diversification(
     use_similarity_scores = getattr(diversifier, "use_similarity_scores", False)
 
     title2embedding = None
-    if not use_similarity_scores and hasattr(diversifier, "embedder"):
-        title2embedding = (
-            precomputed_embeddings
-            if precomputed_embeddings is not None
-            else precompute_title_embeddings(rankings, diversifier.embedder)
-        )
+    if not use_similarity_scores:
+        title2embedding = precomputed_embeddings
 
     for user_id, (titles, relevance_scores) in rankings.items():
         if len(titles) != len(relevance_scores):

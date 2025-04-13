@@ -1,10 +1,12 @@
 """Utilities for computing and evaluating recommendation metrics."""
 
+from typing import Any
 import numpy as np
 import pickle
 from sklearn.metrics import ndcg_score
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.spatial.distance import pdist
+import pandas as pd
 
 # Cache for storing loaded similarity scores
 _SIMILARITY_SCORES_CACHE = {}
@@ -249,7 +251,11 @@ def compute_average_category_ild_batched(
     return np.mean(ild_list) if ild_list else 0.0
 
 
-def precompute_title_embeddings(rankings: dict, embedder) -> dict:
+def precompute_title_embeddings(
+    rankings: dict,
+    embedder: Any = None,
+    embedding_params: dict = None,
+) -> dict:
     """
     Precompute embeddings for all unique titles (from each user's full recommendation list)
     and return a mapping from title to embedding.
@@ -257,19 +263,66 @@ def precompute_title_embeddings(rankings: dict, embedder) -> dict:
     Parameters:
         rankings (dict): {user_id: (titles: [str], relevance_scores: [float]), ...}.
         embedder: An instance with an encode_batch(list_of_titles) method.
+        embedding_params (dict): Embedding parameters (use_precomputed_embeddings: bool, precomputed_embeddings_path: str).
+    Returns:
+        dict: Mapping from title (str) to its embedding (np.ndarray).
+    """
+    if embedding_params["use_precomputed_embeddings"]:
+        print(
+            f"Loading precomputed embeddings from {embedding_params['precomputed_embeddings_path']}"
+        )
+        return load_precomputed_embeddings(
+            embedding_params["precomputed_embeddings_path"], rankings
+        )
+    else:
+        unique_titles = set()
+        for _, (titles, _) in rankings.items():
+            unique_titles.update(titles)  # use all items, not just top_k items.
+        unique_titles = list(unique_titles)
+
+        print(f"Computing embeddings for {len(unique_titles)} unique titles.")
+
+        # Compute embeddings for all unique titles in one large batch.
+        embeddings = embedder.encode_batch(unique_titles)
+
+        # Return a mapping from title to embedding.
+        return dict(zip(unique_titles, embeddings))
+
+
+def load_precomputed_embeddings(
+    precomputed_embeddings_path: str, rankings: dict
+) -> dict:
+    """
+    Load precomputed embeddings from file, filter based on titles in rankings,
+    and return a mapping from title to embedding.
+
+    Args:
+        precomputed_embeddings_path (str): Path to the pickle file containing the DataFrame.
+        rankings (dict): Rankings dictionary to extract relevant titles.
 
     Returns:
         dict: Mapping from title (str) to its embedding (np.ndarray).
     """
-    unique_titles = set()
-    for user_id, (titles, _) in rankings.items():
-        unique_titles.update(titles)  # use all items, not just top_k items.
-    unique_titles = list(unique_titles)
+    with open(precomputed_embeddings_path, "rb") as f:
+        embeddings_df = pickle.load(f)  # Assume this loads a pd.DataFrame
 
-    print(f"Computing embeddings for {len(unique_titles)} unique titles.")
+    # check if embeddings_df is a pd.DataFrame and have expected columns
+    if not isinstance(embeddings_df, pd.DataFrame):
+        raise ValueError("embeddings_df must be a pd.DataFrame")
+    if "item" not in embeddings_df.columns or "embedding" not in embeddings_df.columns:
+        raise ValueError("embeddings_df must have 'item' and 'embedding' columns")
 
-    # Compute embeddings for all unique titles in one large batch.
-    embeddings = embedder.encode_batch(unique_titles)
+    # Extract unique titles required from the rankings
+    unique_titles_needed = set()
+    for _, (titles, _) in rankings.items():
+        unique_titles_needed.update(titles)
 
-    # Return a mapping from title to embedding.
-    return dict(zip(unique_titles, embeddings))
+    # Filter the DataFrame to keep only the needed titles
+    filtered_df = embeddings_df[embeddings_df["item"].isin(unique_titles_needed)]
+
+    # Create the title-to-embedding dictionary
+    title_to_embedding = {
+        row["item"]: row["embedding"] for _, row in filtered_df.iterrows()
+    }
+
+    return title_to_embedding

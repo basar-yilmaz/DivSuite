@@ -122,13 +122,17 @@ The primary configuration is done via a YAML file (default: `config.yaml`). Here
     ```
     *   **To use a new dataset:** Create a similar directory structure (e.g., `topk_data/my_new_dataset/`) with corresponding files and update the `base_path` and potentially other filenames in this section.
 
-2.  **`embedder` Section:** Configures the sentence transformer model used for calculating item similarity (used in ILD).
+2.  **`embedder` Section:** Configures the sentence transformer model used for calculating item similarity (used in ILD) *or* specifies paths to pre-computed embeddings.
     ```yaml
     embedder:
       model_name: "all-MiniLM-L6-v2" # Name of the Sentence Transformer model (from Hugging Face Hub)
       device: "cuda"                  # Device for embedding computation ("cuda" or "cpu")
       batch_size: 40960               # Batch size for embedding generation (adjust based on GPU memory)
+      use_precomputed_embeddings: false # Set to true to load embeddings from the specified file instead of computing them
+      precomputed_embeddings_path: "/path/to/your/precomputed_embeddings.pkl" # Path to a .pkl file containing pre-computed embeddings
     ```
+    *   If `use_precomputed_embeddings` is `true`, the `model_name`, `device`, and `batch_size` settings are ignored, and embeddings are loaded directly from `precomputed_embeddings_path`. The `.pkl` file should contain a data structure (e.g., a Pandas DataFrame with 'item' and 'embedding' columns) that can be loaded via `pickle`.
+    *   **Why use `use_precomputed_embeddings`?** Use this if you already have embedding vectors for all items in your dataset (potentially from different models or methods, including sparse representations). This bypasses the on-the-fly embedding computation using the specified `model_name`, allowing you to use custom or pre-existing embeddings for diversity calculations.
 
 3.  **`experiment` Section:** Controls the diversification process and evaluation.
     ```yaml
@@ -153,6 +157,8 @@ The primary configuration is done via a YAML file (default: `config.yaml`). Here
     ```
     *   The `.pkl` file should typically contain a data structure (like a dictionary or a NumPy array) representing the similarity matrix between items.
     *   When `use_similarity_scores` is `true`, the `embedder` settings are ignored for ILD calculation.
+    *   **Why use `use_similarity_scores`?** Use this if you already have pre-calculated pairwise similarity scores between items (e.g., ground truth similarities or scores derived from a specific method). This avoids recalculating similarities on-the-fly and is useful when focusing purely on the diversification algorithm's performance given fixed similarities.
+    *   **Note:** `use_similarity_scores` and `use_precomputed_embeddings` (in the `embedder` section) cannot both be true simultaneously. Choose one method for providing pre-calculated knowledge if needed.
 
 ### Algorithm Parameters
 
@@ -199,8 +205,9 @@ python main.py --diversifier mmr --param_start 0.2 --param_end 0.8  # Override s
 
 Available arguments:
 - Data paths: `--data_path`, `--item_mappings`, `--test_samples`, `--topk_list`, `--topk_scores`, `--movie_categories`
-- Embedder: `--model_name`, `--device`, `--batch_size`
+- Embedder: `--model_name`, `--device`, `--batch_size`, `--use_precomputed_embeddings`, `--precomputed_embeddings_path`
 - Experiment: `--diversifier`, `--param_name`, `--param_start`, `--param_end`, `--param_step`, `--threshold_drop`, `--top_k`, `--use_category_ild`
+- Similarity: `--use_similarity_scores`, `--similarity_scores_path`
 
 ### When to Use What
 

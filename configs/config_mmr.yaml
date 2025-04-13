@@ -12,13 +12,15 @@ embedder:
   # model_name: "all-MiniLM-L6-v2"
   model_name: "intfloat/multilingual-e5-large"
   device: "cuda"
-  batch_size: 40960
+  batch_size: 4096
+  use_precomputed_embeddings: true
+  precomputed_embeddings_path: "/home/byilmaz/ctr_research/diversification/topk_data/movielens/items_with_embeddings.pkl"
 
 # Experiment parameters
 experiment:
   diversifier: "mmr"
   param_name: "lambda_"
-  param_start: 0.0
+  param_start: 0.5
   param_end: 1.0
   param_step: 0.005
   threshold_drop: 0.1
