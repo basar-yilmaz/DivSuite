@@ -5,77 +5,26 @@ data:
   test_samples: "test_samples.csv"
   topk_list: "ml-topk_iid_list.pkl"
   topk_scores: "ml-topk_score.pkl"
-  movie_categories: "movie_categories.csv"  # Optional: only for category-based ILD
+  movie_categories: "movie_categories.csv"
 
 # Embedder settings
 embedder:
-  model_name: "all-MiniLM-L6-v2"
-  device: "cpu"
-  batch_size: 40960
+  model_name: "intfloat/multilingual-e5-large"
+  device: "cuda"
+  batch_size: 4096
 
-# Algorithm configurations
-algorithms:
-  motley:
-    param_name: "theta_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
+# Experiment parameters
+experiment:
+  diversifier: "swap"
+  param_name: "lambda_"
+  param_start: 0.0
+  param_end: 1.0
+  param_step: 0.005
+  threshold_drop: 0.1
+  top_k: 10
+  use_category_ild: false
 
-  mmr:
-    param_name: "lambda_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  bswap:
-    param_name: "theta_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  clt:
-    param_name: "lambda_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-    pick_strategy: "medoid"  # or "highest_relevance"
-
-  msd:
-    param_name: "lambda_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  swap:
-    param_name: "theta_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  sy:
-    param_name: "threshold"
-    param_start: 1.0
-    param_end: 0.0
-    param_step: -0.05
-    threshold_drop: 0.01
-    top_k: 10
-
-  gmc:
-    param_name: "lambda_"
-    param_start: 0.0
-    param_end: 1.0
-    param_step: 0.05
-    threshold_drop: 0.01
-    top_k: 10
+# Similarity scores settings
+similarity:
+  use_similarity_scores: false
+  similarity_scores_path: "similarity_results.pkl"

@@ -68,17 +68,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--param_step", type=float, help="Step size for parameter")
     parser.add_argument("--threshold_drop", type=float, help="NDCG drop threshold")
     parser.add_argument("--top_k", type=int, help="Number of top items to consider")
-    
+
     # Similarity score settings
     parser.add_argument(
-        "--use_similarity_scores", 
-        action="store_true", 
-        help="Whether to use precomputed similarity scores"
+        "--use_similarity_scores",
+        action="store_true",
+        help="Whether to use precomputed similarity scores",
     )
     parser.add_argument(
-        "--similarity_scores_path", 
-        type=str, 
-        help="Path to the precomputed similarity scores file"
+        "--similarity_scores_path",
+        type=str,
+        help="Path to the precomputed similarity scores file",
     )
 
     return parser.parse_args()
@@ -134,11 +134,11 @@ def merge_configs(
         config["experiment"]["threshold_drop"] = args.threshold_drop
     if args.top_k is not None:
         config["experiment"]["top_k"] = args.top_k
-        
+
     # Update similarity scores settings if provided in args
     if "similarity" not in config:
         config["similarity"] = {}
-    
+
     if args.use_similarity_scores:
         config["similarity"]["use_similarity_scores"] = args.use_similarity_scores
     if args.similarity_scores_path:

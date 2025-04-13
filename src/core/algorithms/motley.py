@@ -54,7 +54,9 @@ class MotleyDiversifier(BaseDiversifier):
         sim_matrix = self.compute_similarity_matrix(titles, title2embedding)
 
         # Pre-sort indices by descending relevance
-        sorted_indices = sorted(range(num_items), key=lambda i: float(items[i, 2]), reverse=True)
+        sorted_indices = sorted(
+            range(num_items), key=lambda i: float(items[i, 2]), reverse=True
+        )
         R = []
 
         # Iterate through the sorted indices and build R
@@ -68,6 +70,5 @@ class MotleyDiversifier(BaseDiversifier):
                     R.append(idx)
             if len(R) == top_k:
                 break
-
 
         return items[R]

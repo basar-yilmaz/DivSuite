@@ -128,23 +128,23 @@ Each diversification algorithm has specific parameters:
 
 - **Motley**: Uses `theta_` parameter (0.0 to 1.0)
   - Higher values prioritize diversity over relevance
-  
+
 - **MMR**: Uses `lambda_` parameter (0.0 to 1.0)
   - Higher values prioritize relevance over diversity
-  
+
 - **BSwap**: Uses `theta_` parameter (0.0 to 1.0)
   - Higher values increase diversity threshold for swaps
-  
+
 - **CLT**: Uses `lambda_` parameter (0.0 to 1.0)
   - Higher values prioritize relevance over diversity
   - Additional option: `pick_strategy` ("medoid" or "highest_relevance")
-  
+
 - **MaxSum (MSD)**: Uses `lambda_` parameter (0.0 to 1.0)
   - Higher values prioritize relevance over diversity
-  
+
 - **Swap**: Uses `theta_` parameter (0.0 to 1.0)
   - Higher values increase diversity threshold for swaps
-  
+
 - **SY**: Uses `threshold` parameter (1.0 to 0.0, decreasing)
   - Lower values increase diversity threshold
 

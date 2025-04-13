@@ -45,8 +45,8 @@ def compute_baseline_metrics(
         dict: Baseline metrics including NDCG, MRR, ILD, and precomputed embeddings.
     """
     baseline_relevance = create_relevance_lists(rankings, pos_items)
-    _, _, _, baseline_ndcg, baseline_mrr = (
-        evaluate_recommendation_metrics(baseline_relevance, top_k)
+    _, _, _, baseline_ndcg, baseline_mrr = evaluate_recommendation_metrics(
+        baseline_relevance, top_k
     )
 
     precomputed_embeddings = None
@@ -132,18 +132,23 @@ def run_diversification_loop(
         )
 
         diversifier_kwargs = {experiment_params["diversifier_param_name"]: param_value}
-        
+
         # Add item_id_mapping and similarity_scores_path if using similarity scores
         if baseline_metrics.get("use_similarity_scores", False):
-            diversifier_kwargs.update({
-                "item_id_mapping": {v: k for k, v in baseline_metrics["item_id_mapping"].items()},
-                "similarity_scores_path": baseline_metrics["similarity_scores_path"],
-                "use_similarity_scores": True
-            })
+            diversifier_kwargs.update(
+                {
+                    "item_id_mapping": {
+                        v: k for k, v in baseline_metrics["item_id_mapping"].items()
+                    },
+                    "similarity_scores_path": baseline_metrics[
+                        "similarity_scores_path"
+                    ],
+                    "use_similarity_scores": True,
+                }
+            )
 
         diversifier = experiment_params["diversifier_cls"](
-            embedder=embedder,
-            **diversifier_kwargs
+            embedder=embedder, **diversifier_kwargs
         )
 
         diversified_results = _run_diversification(
@@ -196,19 +201,19 @@ def _run_diversification(
         dict: Diversified rankings dictionary.
     """
     diversified_dict = {}
-    
+
     # Check if using similarity scores instead of embeddings
-    use_similarity_scores = getattr(diversifier, 'use_similarity_scores', False)
-    
+    use_similarity_scores = getattr(diversifier, "use_similarity_scores", False)
+
     # Only precompute embeddings if not using similarity scores
     title2embedding = None
-    if not use_similarity_scores and hasattr(diversifier, 'embedder'):
+    if not use_similarity_scores and hasattr(diversifier, "embedder"):
         title2embedding = (
             precomputed_embeddings
             if precomputed_embeddings is not None
             else precompute_title_embeddings(rankings, diversifier.embedder)
         )
-    
+
     # from tqdm import tqdm
     # Process each user sequentially with progress bar
     for user_id, (titles, relevance_scores) in rankings.items():
@@ -223,7 +228,7 @@ def _run_diversification(
             ],
             dtype=object,
         )
-        
+
         # Call diversify with or without embeddings
         if use_similarity_scores:
             diversified_items = diversifier.diversify(items, top_k=top_k)

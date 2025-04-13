@@ -73,17 +73,19 @@ class SwapDiversifier(BaseDiversifier):
             return relevance_term + diversity_term
 
         # --- PHASE 1 ---
-        sorted_by_rel = sorted(range(num_items), key=lambda i: items[i, 2], reverse=True)
+        sorted_by_rel = sorted(
+            range(num_items), key=lambda i: items[i, 2], reverse=True
+        )
         R_indices = sorted_by_rel[:top_k]
-        S_indices = sorted_by_rel[top_k:] # Keep these sorted by relevance
+        S_indices = sorted_by_rel[top_k:]  # Keep these sorted by relevance
 
         R_set = set(R_indices)
-        current_score = score_set(R_set) # Calculate initial score once O(k^2)
+        current_score = score_set(R_set)  # Calculate initial score once O(k^2)
 
         # --- PHASE 2: Swapping with Delta Calculation ---
-        for s_s in S_indices: # Iterate through remaining items in relevance order
+        for s_s in S_indices:  # Iterate through remaining items in relevance order
             best_swap_sj = -1
-            best_delta = 0.0 # We only swap if delta > 0
+            best_delta = 0.0  # We only swap if delta > 0
 
             # Try swapping s_s with each s_j in the current R_set
             for s_j in R_set:
@@ -91,16 +93,20 @@ class SwapDiversifier(BaseDiversifier):
                 sum_one_minus_sim_ss_R = 0.0
                 for r_idx in R_set:
                     if r_idx != s_j:
-                        sum_one_minus_sim_ss_R += (1.0 - sim_matrix[s_s, r_idx])
-                
+                        sum_one_minus_sim_ss_R += 1.0 - sim_matrix[s_s, r_idx]
+
                 # Compute s_j's diversity sum excluding itself (same as before)
                 sum_one_minus_sim_sj_R = 0.0
                 for r_idx in R_set:
                     if r_idx != s_j:
-                        sum_one_minus_sim_sj_R += (1.0 - sim_matrix[s_j, r_idx])
+                        sum_one_minus_sim_sj_R += 1.0 - sim_matrix[s_j, r_idx]
 
                 # Calculate Relevance Delta
-                delta_rel = (top_k - 1) * (1 - self.lambda_) * (float(items[s_s, 2]) - float(items[s_j, 2]))
+                delta_rel = (
+                    (top_k - 1)
+                    * (1 - self.lambda_)
+                    * (float(items[s_s, 2]) - float(items[s_j, 2]))
+                )
 
                 # Calculate Diversity Delta
                 # Gain terms with s_s, Lose terms with s_j
@@ -108,7 +114,11 @@ class SwapDiversifier(BaseDiversifier):
                 # Need sum(1-sim(s_j, r)) for r in R-{s_j}
                 # Note: sum_one_minus_sim_ss_R already calculated is sum(1-sim(s_s, r)) for r in R
                 # Note: sum_one_minus_sim_sj_R calculated above is sum(1-sim(s_j, r)) for r in R-{s_j}
-                delta_div = 2.0 * self.lambda_ * (sum_one_minus_sim_ss_R - sum_one_minus_sim_sj_R)
+                delta_div = (
+                    2.0
+                    * self.lambda_
+                    * (sum_one_minus_sim_ss_R - sum_one_minus_sim_sj_R)
+                )
 
                 # Total Delta for swapping s_j with s_s
                 current_swap_delta = delta_rel + delta_div
@@ -121,7 +131,7 @@ class SwapDiversifier(BaseDiversifier):
             if best_swap_sj != -1:
                 R_set.remove(best_swap_sj)
                 R_set.add(s_s)
-                current_score += best_delta 
+                current_score += best_delta
 
         final_indices = list(R_set)
 

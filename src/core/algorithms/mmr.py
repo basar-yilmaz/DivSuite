@@ -1,8 +1,6 @@
 import numpy as np
 from src.core.algorithms.base import BaseDiversifier
-from src.utils.utils import compute_pairwise_cosine
 from src.core.embedders.base_embedder import BaseEmbedder
-from src.metrics.metrics_utils import load_similarity_scores
 
 
 class MMRDiversifier(BaseDiversifier):
@@ -49,17 +47,20 @@ class MMRDiversifier(BaseDiversifier):
             unselected_mask = np.ones(len(items), dtype=bool)
             unselected_mask[selected_indices] = False
             unselected = np.where(unselected_mask)[0]
-            
+
             # If no candidates remain, exit the loop
             if unselected.size == 0:
                 break
 
             # Vectorize relevance computation for unselected items:
-            relevance_candidates = (1 - self.lambda_) * items[unselected, 2].astype(float)
+            relevance_candidates = (1 - self.lambda_) * items[unselected, 2].astype(
+                float
+            )
 
             # Vectorize diversity: sum (1 - similarity) for each candidate over currently selected items
-            diversity_candidates = (self.lambda_ / len(selected_indices)) * \
-                np.sum(1 - sim_matrix[unselected][:, selected_indices], axis=1)
+            diversity_candidates = (self.lambda_ / len(selected_indices)) * np.sum(
+                1 - sim_matrix[unselected][:, selected_indices], axis=1
+            )
 
             # Compute the final MMR scores for the unselected candidates
             mmr_scores = relevance_candidates + diversity_candidates
@@ -67,6 +68,5 @@ class MMRDiversifier(BaseDiversifier):
             # Select the candidate with the highest score
             best_candidate = unselected[np.argmax(mmr_scores)]
             selected_indices.append(best_candidate)
-
 
         return items[selected_indices]

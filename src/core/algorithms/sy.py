@@ -11,8 +11,8 @@ class SYDiversifier(BaseDiversifier):
     """
 
     def __init__(
-        self, 
-        embedder: BaseEmbedder, 
+        self,
+        embedder: BaseEmbedder,
         threshold: float = 0.67,
         use_similarity_scores: bool = False,
         item_id_mapping: dict = None,

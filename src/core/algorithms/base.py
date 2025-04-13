@@ -15,18 +15,18 @@ class BaseDiversifier(ABC):
     """
     Abstract base class for all diversification algorithms.
     """
-    
+
     def __init__(
         self,
         embedder=None,
         use_similarity_scores: bool = False,
         item_id_mapping: dict = None,
         similarity_scores_path: str = None,
-        **kwargs
+        **kwargs,
     ):
         """
         Initialize the base diversifier with common parameters.
-        
+
         :param embedder: The embedder to use for generating embeddings
         :param use_similarity_scores: Whether to use pre-computed similarity scores
         :param item_id_mapping: Mapping from item titles/text to IDs for similarity lookup
@@ -37,15 +37,15 @@ class BaseDiversifier(ABC):
         self.use_similarity_scores = use_similarity_scores
         self.item_id_mapping = item_id_mapping
         self.similarity_scores_path = similarity_scores_path
-        
+
         # Pre-load similarity scores if using them
         if self.use_similarity_scores:
             self.sim_scores_dict = load_similarity_scores(self.similarity_scores_path)
-    
+
     def compute_similarity_matrix(self, titles, title2embedding=None):
         """
         Compute similarity matrix using either pre-loaded similarity scores or embeddings.
-        
+
         :param titles: List of item titles/text
         :param title2embedding: Optional pre-computed embeddings dict
         :return: NxN similarity matrix
@@ -53,10 +53,10 @@ class BaseDiversifier(ABC):
         if self.use_similarity_scores:
             # Use preloaded similarity scores to build similarity matrix
             sim_matrix = np.zeros((len(titles), len(titles)))
-            
+
             # Get item IDs for the titles
             item_ids = [self.item_id_mapping.get(title) for title in titles]
-            
+
             # Fill the similarity matrix using cached similarity scores
             for i in range(len(item_ids)):
                 for j in range(len(item_ids)):
@@ -67,12 +67,12 @@ class BaseDiversifier(ABC):
                         if id1 is None or id2 is None:
                             sim_matrix[i, j] = 0.0
                             continue
-                            
+
                         # Look up similarity score in both directions
                         sim = self.sim_scores_dict.get((id1, id2))
                         if sim is None:
                             sim = self.sim_scores_dict.get((id2, id1))
-                        
+
                         sim_matrix[i, j] = sim if sim is not None else 0.0
         else:
             # Use embeddings-based similarity
@@ -85,11 +85,13 @@ class BaseDiversifier(ABC):
             else:
                 # Compute embeddings on the fly
                 if self.embedder is None:
-                    raise ValueError("Embedder must be provided when title2embedding is None")
+                    raise ValueError(
+                        "Embedder must be provided when title2embedding is None"
+                    )
                 embeddings = self.embedder.encode_batch(titles)
-            
+
             sim_matrix = compute_pairwise_cosine(embeddings)
-        
+
         return sim_matrix
 
     @abstractmethod

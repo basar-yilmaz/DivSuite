@@ -41,7 +41,9 @@ def load_experiment_data(
     # Load main experiment data
     item_mappings = data_path / config["data"]["item_mappings"]
     test_samples = data_path / config["data"]["test_samples"]
-    converted_data, id_to_title = load_data_and_convert(str(test_samples), str(item_mappings))
+    converted_data, id_to_title = load_data_and_convert(
+        str(test_samples), str(item_mappings)
+    )
     pos_items = [row[0] for row in converted_data]
     logger.info("Loaded and converted test samples data")
 

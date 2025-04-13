@@ -334,7 +334,6 @@ def load_movie_categories(mapping_csv_path):
     return title_to_categories, title_to_vector
 
 
-
 def compute_average_category_ild_batched(
     rankings: dict, categories_dict: tuple, topk: int = 10
 ) -> float:
