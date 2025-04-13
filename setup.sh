@@ -1,13 +1,5 @@
 #!/usr/bin/env bash
 
-# Check if the script is being sourced
-(return 0 2>/dev/null)
-if [ $? -ne 0 ]; then
-    echo "⚠️  Please source this script to activate the virtual environment:"
-    echo "    source setup.sh"
-    exit 1
-fi
-
 set -e
 
 # Function to check if a command exists
@@ -62,12 +54,14 @@ uv venv --python 3.11 --prompt "divsuite_env"
 echo "🔄 Synchronizing dependencies with 'uv'..."
 uv sync --all-extras --dev
 
-# 6. Activate the virtual environment
-echo "🐍 Activating virtual environment..."
-source .venv/bin/activate
-
-# 7. Install pre-commit hooks
+# 6. Install pre-commit hooks
 echo "🔗 Installing pre-commit hooks..."
 pre-commit install --install-hooks
 
-echo "✅ Setup complete! You're ready to start developing."
+echo ""
+echo "✅ Setup complete!"
+echo ""
+echo "👉 To activate the virtual environment, run:"
+echo "   source .venv/bin/activate"
+echo ""
+echo "Happy coding! 🚀"
