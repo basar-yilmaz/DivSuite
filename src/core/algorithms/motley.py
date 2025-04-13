@@ -1,6 +1,6 @@
 import numpy as np
+
 from src.core.algorithms.base import BaseDiversifier
-from src.utils.utils import compute_pairwise_cosine
 from src.core.embedders.base_embedder import BaseEmbedder
 
 
@@ -53,37 +53,21 @@ class MotleyDiversifier(BaseDiversifier):
         titles = items[:, 1].tolist()
         sim_matrix = self.compute_similarity_matrix(titles, title2embedding)
 
-        # distance(i,j) = 1 - sim_matrix[i,j]
-        def distance(i, j):
-            return 1.0 - sim_matrix[i, j]
-
-        # We'll treat items[i,2] as "relevance"
-        def relevance(i):
-            return float(items[i, 2])
-
-        # Convert all item indices into a set
-        S = set(range(num_items))
+        # Pre-sort indices by descending relevance
+        sorted_indices = sorted(range(num_items), key=lambda i: float(items[i, 2]), reverse=True)
         R = []
 
-        # 2) Pick the highest relevance item from S => s_s => R
-        s_s = max(S, key=lambda i: relevance(i))
-        S.remove(s_s)
-        R.append(s_s)
+        # Iterate through the sorted indices and build R
+        for idx in sorted_indices:
+            if not R:
+                R.append(idx)
+            else:
+                # Vectorized diversity check:
+                # For each candidate, compute distances to all items in R in one go.
+                if np.all(1.0 - sim_matrix[np.array(R), idx] >= self.theta_):
+                    R.append(idx)
+            if len(R) == top_k:
+                break
 
-        # 3) While |R| < k:
-        while len(R) < top_k and len(S) > 0:
-            # pick next highest relevance item
-            next_s = max(S, key=lambda i: relevance(i))
-            S.remove(next_s)
-
-            # check if it's sufficiently diverse from every item in R
-            all_diverse = True
-            for r_idx in R:
-                if distance(r_idx, next_s) < self.theta_:
-                    all_diverse = False
-                    break
-
-            if all_diverse:
-                R.append(next_s)
 
         return items[R]
