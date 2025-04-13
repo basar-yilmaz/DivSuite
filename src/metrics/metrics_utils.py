@@ -241,12 +241,29 @@ def compute_average_category_ild_batched(
             ild_list.append(0.0)
             continue
 
-        vectors = np.vstack(vectors)
-        pairwise_distances = pdist(
-            vectors, metric="cosine"
-        )  # TODO: check if this is correct
-        ild = (2.0 / (len(vectors) * (len(vectors) - 1))) * np.sum(pairwise_distances)
-        ild_list.append(ild)
+        vectors_np = np.vstack(vectors)
+
+        if not isinstance(vectors_np, np.ndarray):
+            try:
+                vectors_np = np.array(vectors, dtype=float)
+            except Exception as e:
+                print(f"Warning: Could not convert vectors to NumPy array. Error: {e}")
+                ild_list.append(0.0)
+                continue
+
+        if vectors_np.ndim == 1:
+            vectors_np = vectors_np.reshape(1, -1)
+
+        if vectors_np.shape[0] <= 1:
+            ild_list.append(0.0)
+            continue
+
+        pairwise_distances = pdist(vectors_np, metric="cosine")
+        if len(pairwise_distances) > 0:
+            ild = np.mean(pairwise_distances)
+            ild_list.append(ild)
+        else:
+            ild_list.append(0.0)
 
     return np.mean(ild_list) if ild_list else 0.0
 
@@ -283,7 +300,7 @@ def precompute_title_embeddings(
         print(f"Computing embeddings for {len(unique_titles)} unique titles.")
 
         # Compute embeddings for all unique titles in one large batch.
-        embeddings = embedder.encode_batch(unique_titles)
+        embeddings = np.array(embedder.encode_batch(unique_titles))
 
         # Return a mapping from title to embedding.
         return dict(zip(unique_titles, embeddings))
@@ -311,7 +328,6 @@ def load_precomputed_embeddings(
         raise ValueError("embeddings_df must be a pd.DataFrame")
     if "item" not in embeddings_df.columns or "embedding" not in embeddings_df.columns:
         raise ValueError("embeddings_df must have 'item' and 'embedding' columns")
-
     # Extract unique titles required from the rankings
     unique_titles_needed = set()
     for _, (titles, _) in rankings.items():
@@ -322,7 +338,10 @@ def load_precomputed_embeddings(
 
     # Create the title-to-embedding dictionary
     title_to_embedding = {
-        row["item"]: row["embedding"] for _, row in filtered_df.iterrows()
+        row["item"]: np.array(row["embedding"]) for _, row in filtered_df.iterrows()
     }
+
+    # # print out dimension of embeddings
+    # print(f"Embeddings dimension: {title_to_embedding[list(title_to_embedding.keys())[0]].shape}")
 
     return title_to_embedding
