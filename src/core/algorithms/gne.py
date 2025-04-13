@@ -63,8 +63,7 @@ class GNEDiversifier(BaseDiversifier):
 
             while len(R) < top_k and S:
                 mmc_scores = {
-                    s: self._mmc(s, R, S, items, sim_matrix, div_matrix, top_k)
-                    for s in S
+                    s: self._mmc(s, R, S, items, div_matrix, top_k) for s in S
                 }
                 s_max = max(mmc_scores.values())
                 s_min = min(mmc_scores.values())
@@ -75,10 +74,8 @@ class GNEDiversifier(BaseDiversifier):
                 S.remove(s_choice)
 
             # Local Search Phase
-            R = self._local_search(
-                R, full_indices, items, sim_matrix, div_matrix, top_k
-            )
-            current_F = self._compute_F(R, items, sim_matrix, div_matrix, top_k)
+            R = self._local_search(R, full_indices, items, div_matrix, top_k)
+            current_F = self._compute_F(R, items, div_matrix, top_k)
 
             if current_F > best_F:
                 best_F = current_F
@@ -86,42 +83,41 @@ class GNEDiversifier(BaseDiversifier):
 
         return items[best_R]
 
-    def _mmc(self, s_i, R, S, items, sim_matrix, div_matrix, k):
+    def _mmc(self, s_i, R, S, items, div_matrix, k):
         """
-        Computes the Maximum Marginal Contribution (MMC) score for an item.
-        Optimized version with precomputed diversity matrix.
+        Computes the MMC score for an item using vectorized operations.
         """
         k_minus_1 = max(1, k - 1)
+        # Relevance contribution remains as before.
         sim_term = (1 - self.lambda_) * items[s_i, 2]
 
         if not R:
             return sim_term
 
-        # Only compute the diversity once for this item
-        diversity_factor = self.lambda_ / k_minus_1
+        # Vectorize diversity contribution from R.
+        R_arr = np.array(list(R))
+        div_term_R = (self.lambda_ / k_minus_1) * np.sum(div_matrix[s_i, R_arr])
 
-        # Use precomputed diversity matrix instead of calculating 1-sim every time
-        div_sum_R = sum(div_matrix[s_i, s_j] for s_j in R)
-        div_term_R = diversity_factor * div_sum_R
-
-        # Check if we need to consider remaining items
+        # Diversity contribution from S.
         remaining_depth = k - len(R) - 1
         if remaining_depth <= 0:
             return sim_term + div_term_R
 
-        # Use numpy operations for faster selection of top diversity scores
-        remaining_indices = np.array([s_j for s_j in S if s_j != s_i])
-        if len(remaining_indices) > 0:
-            diversity_scores = div_matrix[s_i, remaining_indices]
+        # Vectorize over S: exclude s_i.
+        S_arr = np.array(list(S))
+        S_arr = S_arr[S_arr != s_i]
+        if S_arr.size > 0:
+            diversity_scores = div_matrix[s_i, S_arr]
+            # Use np.partition to efficiently get the top 'remaining_depth' scores.
             top_l_scores = np.partition(
-                diversity_scores, -min(remaining_depth, len(diversity_scores))
+                diversity_scores, -min(remaining_depth, diversity_scores.size)
             )[-remaining_depth:]
-            div_term_S = diversity_factor * np.sum(top_l_scores)
+            div_term_S = (self.lambda_ / k_minus_1) * np.sum(top_l_scores)
             return sim_term + div_term_R + div_term_S
 
         return sim_term + div_term_R
 
-    def _compute_F(self, R, items, sim_matrix, div_matrix, k):
+    def _compute_F(self, R, items, div_matrix, k):
         """
         Computes the overall objective function with vectorized operations where possible.
         Uses precomputed diversity matrix.
@@ -139,44 +135,60 @@ class GNEDiversifier(BaseDiversifier):
 
         return (k - 1) * (1 - self.lambda_) * sim_sum + 2 * self.lambda_ * div_sum
 
-    def _local_search(self, R, full_indices, items, sim_matrix, div_matrix, k):
+    def _local_search(self, R, full_indices, items, div_matrix, k):
         """
-        Improved local search with fewer redundant calculations.
-        Uses precomputed diversity matrix.
+        Optimized local search using vectorized incremental evaluation for swap candidates.
         """
-        improved = True
         current_R = R.copy()
         S_remaining = list(full_indices - set(current_R))
-        current_F = self._compute_F(current_R, items, sim_matrix, div_matrix, k)
+        current_F = self._compute_F(current_R, items, div_matrix, k)
+        improved = True
 
         while improved:
             improved = False
-
-            # Precompute swapping effects for all pairs in one iteration
+            # Try to improve each element of current_R
             for i in range(len(current_R)):
-                # Store original item to restore later if needed
-                original_item = current_R[i]
+                original = current_R[i]
+                R_without = np.delete(
+                    np.array(current_R), i
+                )  # R excluding the current index
 
-                for j, candidate in enumerate(S_remaining):
-                    # Temporarily swap
-                    current_R[i] = candidate
-                    new_F = self._compute_F(current_R, items, sim_matrix, div_matrix, k)
+                candidates = np.array(S_remaining)
+                if candidates.size == 0:
+                    continue
 
-                    if new_F > current_F:
-                        # Keep this improvement
-                        S_remaining[j] = original_item  # Update remaining candidates
-                        S_remaining.remove(
-                            original_item
-                        )  # Remove swapped-out item from remaining list
-                        S_remaining.append(original_item)  # Add back replaced item
-                        improved = True
-                        current_F = new_F
-                        break
-                    else:
-                        # Restore the item if no improvement
-                        current_R[i] = original_item
+                # Compute the relevance delta for all candidates at once.
+                rel_diff = (
+                    (k - 1)
+                    * (1 - self.lambda_)
+                    * (items[candidates, 2] - items[original, 2])
+                )
 
-                if improved:
-                    break
+                # Compute diversity difference for each candidate.
+                # For each candidate c, compute sum_{r in R_without} div_matrix[c, r]
+                diversity_candidate = np.sum(
+                    div_matrix[candidates][:, R_without], axis=1
+                )
+                diversity_original = np.sum(div_matrix[original, R_without])
+                delta_div = (
+                    2 * self.lambda_ * (diversity_candidate - diversity_original)
+                )
 
+                # Total delta change for replacing original with each candidate.
+                delta_F = rel_diff + delta_div
+
+                # Select the candidate with the maximum delta.
+                best_idx = np.argmax(delta_F)
+                if delta_F[best_idx] > 0:
+                    best_candidate = int(candidates[best_idx])
+                    # Update S_remaining: remove best_candidate and add original.
+                    S_remaining.remove(best_candidate)
+                    if original not in S_remaining:
+                        S_remaining.append(original)
+                    current_R[i] = best_candidate
+                    current_F += delta_F[best_idx]
+                    improved = True
+                    break  # Restart the search after a successful swap
+
+            # If an improvement was made, continue the outer loop; otherwise, exit.
         return current_R
