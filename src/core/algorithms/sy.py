@@ -1,6 +1,6 @@
 import numpy as np
+
 from src.core.algorithms.base import BaseDiversifier
-from src.utils.utils import compute_pairwise_cosine
 from src.core.embedders.base_embedder import BaseEmbedder
 
 
@@ -11,8 +11,8 @@ class SYDiversifier(BaseDiversifier):
     """
 
     def __init__(
-        self, 
-        embedder: BaseEmbedder, 
+        self,
+        embedder: BaseEmbedder,
         threshold: float = 0.67,
         use_similarity_scores: bool = False,
         item_id_mapping: dict = None,
@@ -60,16 +60,8 @@ class SYDiversifier(BaseDiversifier):
 
         # Iterate through each item to check for similarity with selected items
         for i in range(1, num_items):
-            # Assume the item is selected
-            is_selected = True
-
-            # Check similarity with all previously selected items
-            for j in selected_indices:
-                if sim_matrix[i, j] > self.threshold:
-                    is_selected = False
-                    break
-
-            if is_selected:
+            # Vectorized check: if any selected item has similarity above threshold, skip
+            if not np.any(sim_matrix[i, selected_indices] > self.threshold):
                 selected_indices.append(i)
 
             # Stop if we've reached top_k

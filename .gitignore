@@ -1,5 +1,3 @@
-tests/
-test*
 __pycache__/
 *.pyc
 *.pkl
@@ -15,3 +13,5 @@ old/
 .env
 logs*/
 .vscode/
+*logs/
+.venv/

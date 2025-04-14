@@ -9,22 +9,25 @@ data:
 
 # Embedder settings
 embedder:
+  # model_name: "all-MiniLM-L6-v2"
   model_name: "intfloat/multilingual-e5-large"
   device: "cuda"
   batch_size: 4096
+  use_precomputed_embeddings: true
+  precomputed_embeddings_path: "/home/byilmaz/ctr_research/diversification/topk_data/movielens/items_with_embeddings.pkl"
 
 # Experiment parameters
 experiment:
-  diversifier: "swap"
+  diversifier: "mmr"
   param_name: "lambda_"
-  param_start: 0.0
+  param_start: 0.5
   param_end: 1.0
   param_step: 0.005
   threshold_drop: 0.1
   top_k: 10
-  use_category_ild: false
+  use_category_ild: true
 
 # Similarity scores settings
 similarity:
   use_similarity_scores: false
-  similarity_scores_path: "similarity_results.pkl"
+  similarity_scores_path: "/mnt/scratch1/byilmaz/data_syn/similarity_results.pkl"

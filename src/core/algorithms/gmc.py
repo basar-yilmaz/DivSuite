@@ -1,6 +1,5 @@
 import numpy as np
 from src.core.algorithms.base import BaseDiversifier
-from src.utils.utils import compute_pairwise_cosine
 from src.core.embedders.base_embedder import BaseEmbedder
 
 
@@ -66,31 +65,35 @@ class GMCDiversifier(BaseDiversifier):
         Computes the Maximum Marginal Contribution (MMC) score for an item.
         """
         if not R:
-            return (1 - self.lambda_) * items[s_i, 2]  # İlk eleman için sadece alaka skoru kullanılır.
+            return (1 - self.lambda_) * items[s_i, 2]
 
-        p = len(R) + 1  # Yeni eleman eklendiğinde R'nin boyutu
-        k_minus_1 = max(1, k - 1)  # (k-1) normalizasyon için
+        p = len(R) + 1  # When s_i is added, R’s size increases by 1
+        k_minus_1 = max(1, k - 1)
 
-        # 1. Alaka katkısı
+        # 1. Relevance contribution
         sim_term = (1 - self.lambda_) * items[s_i, 2]
 
-        # 2. Çeşitlilik katkısı (R içinde)
-        div_sum_R = sum(1 - sim_matrix[s_i, s_j] for s_j in R)
-        div_term_R = (self.lambda_ / k_minus_1) * div_sum_R
+        # 2. Diversity contribution from R (vectorized over R)
+        R_arr = np.array(list(R))
+        div_scores_R = 1.0 - sim_matrix[s_i, R_arr]
+        div_term_R = (self.lambda_ / k_minus_1) * np.sum(div_scores_R)
 
-        # 3. Çeşitlilik katkısı (S içinde, en büyük k - p skorlarını alma)
-        remaining_depth = k - p
-        div_term_S = 0
-
+        # 3. Diversity contribution from S:
+        remaining_depth = k - p  # How many additional diversity terms to consider
+        div_term_S = 0.0
         if remaining_depth > 0:
-            # S'deki tüm çeşitlilik katkılarını hesapla ve sırala
-            diversity_scores = [(1 - sim_matrix[s_i, s_j]) for s_j in S if s_j != s_i]
-            top_l_scores = sorted(diversity_scores, reverse=True)[:remaining_depth]  # En büyük k - p kadarını seç
+            # Convert S to array and exclude s_i
+            S_arr = np.array(list(S))
+            S_arr = S_arr[S_arr != s_i]
+            div_scores_S = 1.0 - sim_matrix[s_i, S_arr]
 
-            # Seçilen en büyük katkıları topla
-            div_term_S = (self.lambda_ / k_minus_1) * sum(top_l_scores)
+            # If we have more candidates than needed, pick the top remaining_depth contributions
+            if div_scores_S.size > remaining_depth:
+                # np.sort returns ascending order, so take the last 'remaining_depth' elements for descending order
+                top_l_scores = np.sort(div_scores_S)[-remaining_depth:]
+            else:
+                top_l_scores = div_scores_S
+
+            div_term_S = (self.lambda_ / k_minus_1) * np.sum(top_l_scores)
 
         return sim_term + div_term_R + div_term_S
-
-
-

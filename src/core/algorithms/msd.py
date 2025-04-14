@@ -1,6 +1,7 @@
 import numpy as np
+import heapq
+
 from src.core.algorithms.base import BaseDiversifier
-from src.utils.utils import compute_pairwise_cosine
 from src.core.embedders.base_embedder import BaseEmbedder
 
 
@@ -33,25 +34,19 @@ class MaxSumDiversifier(BaseDiversifier):
 
     def diversify(
         self,
-        items: np.ndarray,  # shape (N, 3) => [id, title, relevance_score]
+        items: np.ndarray,
         top_k: int = 10,
         title2embedding: dict = None,
         **kwargs,
     ) -> np.ndarray:
-        """
-        :param items: Nx3 array of [item_id, title, relevance]
-                      where items[i,2] = sim(q, s_i) is the 'relevance' for s_i.
-        :param top_k: result set size k
-        :param lambda_: parameter in [0,1], balancing relevance vs. diversity
-        :return: A subset of items (size k or fewer if N < k).
-        """
-
         n = items.shape[0]
         if n == 0:
             return items
         top_k = min(top_k, n)
 
-        # Calculate similarity matrix using the base class method
+        if top_k == 0:
+            return np.array([])
+
         titles = items[:, 1].tolist()
         sim_matrix = self.compute_similarity_matrix(titles, title2embedding)
 
@@ -59,6 +54,7 @@ class MaxSumDiversifier(BaseDiversifier):
             return float(items[i, 2])
 
         def divergence(i, j):
+            # Ensure indices are valid if sim_matrix is sparse/dict
             return 1.0 - sim_matrix[i, j]
 
         def msd_score(i, j):
@@ -66,50 +62,54 @@ class MaxSumDiversifier(BaseDiversifier):
                 relevance(i) + relevance(j)
             ) + 2 * self.lambda_ * divergence(i, j)
 
-        # Convert to a set or list for selecting pairs
-        S = set(range(n))  # candidate indices
-        R = []  # result set (list of indices)
+        # --- Precompute and Heap ---
+        pairwise_scores_heap = []  # Use as a min-heap with negative scores
 
-        # We'll add pairs until we have 2*(k//2) items in R (the largest even number ≤ k)
+        # 1. Precompute all scores (O(N^2))
+        for i in range(n):
+            for j in range(i + 1, n):
+                score = msd_score(i, j)
+                # Push negative score for max-heap behavior
+                heapq.heappush(pairwise_scores_heap, (-score, i, j))
+                # Heap build takes O(N^2 log N) overall
+
+        R = []  # Result list of indices
+        available_items = set(range(n))  # O(1) average lookup/delete
         num_pairs = top_k // 2
 
-        # While we have pairs to pick and enough items in S
-        for _ in range(num_pairs):
-            if len(S) < 2:
-                break  # not enough items left for a pair
+        # 2. Select k//2 pairs using the heap (O(N^2 log N) total pops worst case)
+        pairs_added = 0
+        while pairs_added < num_pairs and len(available_items) >= 2:
+            best_pair_found = False
+            while pairwise_scores_heap:  # Find highest-scoring *valid* pair
+                _, i, j = heapq.heappop(pairwise_scores_heap)
 
-            # Find the pair (i,j) in S that maximizes msd_score(i,j)
-            best_score = float("-inf")
-            best_pair = None
-            s_list = list(S)
+                if i in available_items and j in available_items:
+                    # Found the best valid pair for this iteration
+                    R.extend([i, j])
+                    available_items.remove(i)
+                    available_items.remove(j)
+                    pairs_added += 1
+                    best_pair_found = True
+                    break  # Move to the next pair selection
+                # Else: Pair is invalid (one or both items already taken), continue popping
 
-            # Naive O(|S|^2) search
-            for idx1 in range(len(s_list)):
-                i = s_list[idx1]
-                for idx2 in range(idx1 + 1, len(s_list)):
-                    j = s_list[idx2]
-                    score_ij = msd_score(i, j)
-                    if score_ij > best_score:
-                        best_score = score_ij
-                        best_pair = (i, j)
-
-            if best_pair is None:
+            if not best_pair_found and not pairwise_scores_heap:
+                # Heap became empty before finding enough pairs
                 break
 
-            # Add that pair to R, remove from S
-            i, j = best_pair
-            R.extend([i, j])
-            S.remove(i)
-            S.remove(j)
-
-        # If k is odd, we add one more item from S
-        if top_k % 2 == 1:
-            if len(S) > 0:
-                # The algorithm says "choose an arbitrary object s_i ∈ S"
-                # We'll pick the highest relevance item or a random item.
-                # For "arbitrary," let's just pick the highest relevance for consistency:
-                extra = max(S, key=lambda idx: relevance(idx))
-                R.append(extra)
-                S.remove(extra)
+        # 3. Handle odd k (O(N) or better if items sorted by relevance)
+        if top_k % 2 == 1 and len(available_items) > 0:
+            # Find highest relevance item among remaining available items
+            best_extra = -1
+            max_rel = -float("inf")
+            for item_idx in available_items:
+                rel = relevance(item_idx)
+                if rel > max_rel:
+                    max_rel = rel
+                    best_extra = item_idx
+            if best_extra != -1:
+                R.append(best_extra)
+                # No need to remove from available_items now
 
         return items[R]

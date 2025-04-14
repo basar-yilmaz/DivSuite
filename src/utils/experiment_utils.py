@@ -41,6 +41,7 @@ def get_experiment_params(config: dict) -> dict:
         "use_category_ild": config["experiment"].get("use_category_ild", False),
     }
 
+
 def get_similarity_params(config: dict) -> dict:
     """
     Extract and validate similarity parameters from config.
@@ -57,6 +58,27 @@ def get_similarity_params(config: dict) -> dict:
         "use_similarity_scores": config["similarity"]["use_similarity_scores"],
         "similarity_scores_path": config["similarity"]["similarity_scores_path"],
     }
+
+
+def get_embedding_params(config: dict) -> dict:
+    """
+    Extract and validate embedding parameters from config.
+
+    Args:
+        config (dict): Raw configuration dictionary.
+
+    Returns:
+        dict: Processed embedding parameters including:
+            - use_precomputed_embeddings: Whether to use precomputed embeddings
+            - precomputed_embeddings_path: Path to the precomputed embeddings file
+    """
+    return {
+        "use_precomputed_embeddings": config["embedder"]["use_precomputed_embeddings"],
+        "precomputed_embeddings_path": config["embedder"][
+            "precomputed_embeddings_path"
+        ],
+    }
+
 
 def _get_diversifier_class(class_name: str) -> Type:
     """
@@ -129,16 +151,23 @@ def setup_results_directory(diversifier_cls: Type) -> Tuple[str, str]:
     return results_folder, timestamp
 
 
-def initialize_embedder(config: dict) -> STEmbedder:
+def initialize_embedder(config: dict, embedding_params: dict) -> STEmbedder:
     """
     Initialize the sentence transformer embedder.
 
     Args:
         config (dict): Configuration containing embedder settings.
+        embedding_params (dict): Embedding parameters (use_precomputed_embeddings: bool, precomputed_embeddings_path: str).
 
     Returns:
         STEmbedder: Initialized embedder instance.
     """
+    # If use_precomputed_embeddings is true, we don't need to initialize the embedder.
+    if embedding_params["use_precomputed_embeddings"]:
+        logger.info("Using precomputed embeddings. Embedder not initialized.")
+        return None
+
+    # If use_precomputed_embeddings is false, we need to initialize the embedder.
     embedder = STEmbedder(
         model_name=config["embedder"]["model_name"],
         device=config["embedder"]["device"],

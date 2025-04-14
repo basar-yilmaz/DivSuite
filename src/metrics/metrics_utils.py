@@ -1,10 +1,12 @@
 """Utilities for computing and evaluating recommendation metrics."""
 
+from typing import Any
 import numpy as np
 import pickle
 from sklearn.metrics import ndcg_score
 from sklearn.metrics.pairwise import cosine_similarity
 from scipy.spatial.distance import pdist
+import pandas as pd
 
 # Cache for storing loaded similarity scores
 _SIMILARITY_SCORES_CACHE = {}
@@ -13,105 +15,107 @@ _SIMILARITY_SCORES_CACHE = {}
 def load_similarity_scores(similarity_scores_path: str = None):
     """
     Load similarity scores from file and cache them for future use.
-    
+
     Args:
         similarity_scores_path (str): Path to the pickle file containing precomputed similarity scores.
-        
+
     Returns:
         dict: Dictionary containing similarity scores with integer keys extracted from tensors.
     """
     global _SIMILARITY_SCORES_CACHE
-    
+
     # Return cached data if already loaded
     if similarity_scores_path in _SIMILARITY_SCORES_CACHE:
         return _SIMILARITY_SCORES_CACHE[similarity_scores_path]
-    
+
     # Load data from file
-    with open(similarity_scores_path, 'rb') as f:
+    with open(similarity_scores_path, "rb") as f:
         sim_scores = pickle.load(f)
-    
+
     # Convert tensor keys to integers for easier lookup
     lookup_dict = {}
     for (id1, id2), score in sim_scores.items():
         # Extract integers from tensors if needed
-        key1 = id1.item() if hasattr(id1, 'item') else id1
-        key2 = id2.item() if hasattr(id2, 'item') else id2
+        key1 = id1.item() if hasattr(id1, "item") else id1
+        key2 = id2.item() if hasattr(id2, "item") else id2
         lookup_dict[(key1, key2)] = score
-    
+
     # Store in cache
     _SIMILARITY_SCORES_CACHE[similarity_scores_path] = lookup_dict
-    
+
     return lookup_dict
 
 
 def compute_average_ild_from_scores(
-    topk_dict: dict, 
-    item_id_mapping: dict, 
+    topk_dict: dict,
+    item_id_mapping: dict,
     similarity_scores_path: str = None,
-    topk: int = 5
+    topk: int = 5,
 ) -> float:
     """
     Compute the average Intra-List Diversity (ILD) using precomputed pairwise similarity scores.
-    
+
     ILD is defined as the average pairwise distance (1 - similarity) over all unique
     pairs within a user's top-k recommendation list.
-    
+
     Args:
         topk_dict (dict): Dictionary with keys as user IDs and values as tuples of the form
                          (titles: [str], relevance_scores: [float]).
         item_id_mapping (dict): Dictionary mapping titles to item IDs.
         similarity_scores_path (str): Path to the pickle file containing precomputed similarity scores.
         topk (int, optional): The number of recommendations to consider per user. Defaults to 5.
-    
+
     Returns:
         float: The average ILD value over all users.
     """
     # Load similarity scores (uses cache if available)
     lookup_dict = load_similarity_scores(similarity_scores_path)
-    
+
     ild_list = []
-    
+
     for user, value in topk_dict.items():
         titles = value[0] if isinstance(value, tuple) and len(value) >= 1 else value
-        titles = titles[:min(topk, len(titles))]
-        
+        titles = titles[: min(topk, len(titles))]
+
         # Convert titles to item IDs
-        item_ids = [item_id_mapping.get(title) for title in titles if title in item_id_mapping]
-        
+        item_ids = [
+            item_id_mapping.get(title) for title in titles if title in item_id_mapping
+        ]
+
         n = len(item_ids)
         if n <= 1:
             ild_list.append(0.0)
             continue
-        
+
         # Compute average distance (1 - similarity) for all pairs
         total_distance = 0.0
         pair_count = 0
-        
+
         for i in range(n):
-            for j in range(i+1, n):
+            for j in range(i + 1, n):
                 id1, id2 = item_ids[i], item_ids[j]
-                
+
                 # Look up similarity score in both directions
                 sim = lookup_dict.get((id1, id2))
                 if sim is None:
                     sim = lookup_dict.get((id2, id1))
-                
+
                 # If similarity score exists, add distance to total
                 if sim is not None:
-                    total_distance += (1.0 - sim)
+                    total_distance += 1.0 - sim
                     pair_count += 1
                 else:
                     # If no similarity score is found, use a default distance of 1.0 (no similarity)
                     total_distance += 1.0
                     pair_count += 1
-        
+
         # Calculate average ILD for this user
         if pair_count > 0:
             ild = total_distance / pair_count
             ild_list.append(ild)
         else:
             ild_list.append(0.0)
-    
+
     return np.mean(ild_list)
 
 
@@ -237,11 +241,107 @@ def compute_average_category_ild_batched(
             ild_list.append(0.0)
             continue
 
-        vectors = np.vstack(vectors)
-        pairwise_distances = pdist(
-            vectors, metric="cosine"
-        )  # TODO: check if this is correct
-        ild = (2.0 / (len(vectors) * (len(vectors) - 1))) * np.sum(pairwise_distances)
-        ild_list.append(ild)
+        vectors_np = np.vstack(vectors)
+
+        if not isinstance(vectors_np, np.ndarray):
+            try:
+                vectors_np = np.array(vectors, dtype=float)
+            except Exception as e:
+                print(f"Warning: Could not convert vectors to NumPy array. Error: {e}")
+                ild_list.append(0.0)
+                continue
+
+        if vectors_np.ndim == 1:
+            vectors_np = vectors_np.reshape(1, -1)
+
+        if vectors_np.shape[0] <= 1:
+            ild_list.append(0.0)
+            continue
+
+        pairwise_distances = pdist(vectors_np, metric="cosine")
+        if len(pairwise_distances) > 0:
+            ild = np.mean(pairwise_distances)
+            ild_list.append(ild)
+        else:
+            ild_list.append(0.0)
 
     return np.mean(ild_list) if ild_list else 0.0
+
+
+def precompute_title_embeddings(
+    rankings: dict,
+    embedder: Any = None,
+    embedding_params: dict = None,
+) -> dict:
+    """
+    Precompute embeddings for all unique titles (from each user's full recommendation list)
+    and return a mapping from title to embedding.
+
+    Parameters:
+        rankings (dict): {user_id: (titles: [str], relevance_scores: [float]), ...}.
+        embedder: An instance with an encode_batch(list_of_titles) method.
+        embedding_params (dict): Embedding parameters (use_precomputed_embeddings: bool, precomputed_embeddings_path: str).
+    Returns:
+        dict: Mapping from title (str) to its embedding (np.ndarray).
+    """
+    if embedding_params["use_precomputed_embeddings"]:
+        print(
+            f"Loading precomputed embeddings from {embedding_params['precomputed_embeddings_path']}"
+        )
+        return load_precomputed_embeddings(
+            embedding_params["precomputed_embeddings_path"], rankings
+        )
+    else:
+        unique_titles = set()
+        for _, (titles, _) in rankings.items():
+            unique_titles.update(titles)  # use all items, not just top_k items.
+        unique_titles = list(unique_titles)
+
+        print(f"Computing embeddings for {len(unique_titles)} unique titles.")
+
+        # Compute embeddings for all unique titles in one large batch.
+        embeddings = np.array(embedder.encode_batch(unique_titles))
+
+        # Return a mapping from title to embedding.
+        return dict(zip(unique_titles, embeddings))
+
+
+def load_precomputed_embeddings(
+    precomputed_embeddings_path: str, rankings: dict
+) -> dict:
+    """
+    Load precomputed embeddings from file, filter based on titles in rankings,
+    and return a mapping from title to embedding.
+
+    Args:
+        precomputed_embeddings_path (str): Path to the pickle file containing the DataFrame.
+        rankings (dict): Rankings dictionary to extract relevant titles.
+
+    Returns:
+        dict: Mapping from title (str) to its embedding (np.ndarray).
+    """
+    with open(precomputed_embeddings_path, "rb") as f:
+        embeddings_df = pickle.load(f)  # Assume this loads a pd.DataFrame
+
+    # check if embeddings_df is a pd.DataFrame and have expected columns
+    if not isinstance(embeddings_df, pd.DataFrame):
+        raise ValueError("embeddings_df must be a pd.DataFrame")
+    if "item" not in embeddings_df.columns or "embedding" not in embeddings_df.columns:
+        raise ValueError("embeddings_df must have 'item' and 'embedding' columns")
+    # Extract unique titles required from the rankings
+    unique_titles_needed = set()
+    for _, (titles, _) in rankings.items():
+        unique_titles_needed.update(titles)
+
+    # Filter the DataFrame to keep only the needed titles
+    filtered_df = embeddings_df[embeddings_df["item"].isin(unique_titles_needed)]
+
+    # Create the title-to-embedding dictionary
+    title_to_embedding = {
+        row["item"]: np.array(row["embedding"]) for _, row in filtered_df.iterrows()
+    }
+
+    # # print out dimension of embeddings
+    # print(f"Embeddings dimension: {title_to_embedding[list(title_to_embedding.keys())[0]].shape}")
+
+    return title_to_embedding

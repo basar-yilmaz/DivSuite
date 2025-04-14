@@ -2,6 +2,7 @@
 
 from src.data.data_loader import load_experiment_data
 from src.utils.experiment_utils import (
+    get_embedding_params,
     get_experiment_params,
     setup_results_directory,
     initialize_embedder,
@@ -39,6 +40,7 @@ def run_diversification_pipeline(config: dict) -> None:
     # Initialize experiment
     experiment_params = get_experiment_params(config)
     similarity_params = get_similarity_params(config)
+    embedding_params = get_embedding_params(config)
     results_folder, timestamp = setup_results_directory(
         experiment_params["diversifier_cls"]
     )
@@ -49,7 +51,7 @@ def run_diversification_pipeline(config: dict) -> None:
     )
 
     # Initialize embedder
-    embedder = initialize_embedder(config)
+    embedder = initialize_embedder(config, embedding_params)
 
     # Run experiment
     baseline_metrics = compute_baseline_metrics(
@@ -61,6 +63,7 @@ def run_diversification_pipeline(config: dict) -> None:
         categories_data=categories_data,
         use_similarity_scores=similarity_params["use_similarity_scores"],
         similarity_scores_path=similarity_params["similarity_scores_path"],
+        embedding_params=embedding_params,
         item_id_mapping=item_id_mapping,
     )
 
