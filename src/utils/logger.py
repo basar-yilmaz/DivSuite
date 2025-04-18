@@ -40,7 +40,7 @@ def get_logger(name: str, level=logging.INFO) -> logging.Logger:
 
         # Create and set a formatter with colors
         formatter = ColoredFormatter(
-            fmt="[%(asctime)s] [%(name)s] [%(levelname)s] %(message)s",
+            fmt="[%(asctime)s] [%(levelname)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         console_handler.setFormatter(formatter)

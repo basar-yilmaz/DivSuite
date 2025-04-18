@@ -1,10 +1,10 @@
 # Data paths
 data:
-  base_path: "topk_data/movielens"
+  base_path: "topk_data/logs_amz_new"
   item_mappings: "target_item_mapping.csv"
   test_samples: "test_samples.csv"
-  topk_list: "ml-topk_iid_list.pkl"
-  topk_scores: "ml-topk_score.pkl"
+  topk_list: "amz-topk_iid_list.pkl"
+  topk_scores: "amz-topk_score.pkl"
   movie_categories: "movie_categories.csv"
 
 # Embedder settings
@@ -13,19 +13,19 @@ embedder:
   model_name: "intfloat/multilingual-e5-large"
   device: "cuda"
   batch_size: 4096
-  use_precomputed_embeddings: true
+  use_precomputed_embeddings: false
   precomputed_embeddings_path: "/home/byilmaz/ctr_research/diversification/topk_data/movielens/items_with_embeddings.pkl"
 
 # Experiment parameters
 experiment:
   diversifier: "mmr"
   param_name: "lambda_"
-  param_start: 0.5
+  param_start: 0.0
   param_end: 1.0
   param_step: 0.005
   threshold_drop: 0.1
   top_k: 10
-  use_category_ild: true
+  use_category_ild: false
 
 # Similarity scores settings
 similarity:

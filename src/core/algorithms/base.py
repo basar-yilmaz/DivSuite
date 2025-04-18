@@ -42,14 +42,21 @@ class BaseDiversifier(ABC):
         if self.use_similarity_scores:
             self.sim_scores_dict = load_similarity_scores(self.similarity_scores_path)
 
-    def compute_similarity_matrix(self, titles, title2embedding=None):
+    def compute_similarity_matrix(
+        self, titles, title2embedding=None, precomputed_sim_matrix=None
+    ):
         """
         Compute similarity matrix using either pre-loaded similarity scores or embeddings.
 
         :param titles: List of item titles/text
         :param title2embedding: Optional pre-computed embeddings dict
+        :param precomputed_sim_matrix: Optional pre-computed similarity matrix
         :return: NxN similarity matrix
         """
+        # If a precomputed similarity matrix is provided, use it
+        if precomputed_sim_matrix is not None:
+            return precomputed_sim_matrix
+
         if self.use_similarity_scores:
             # Use preloaded similarity scores to build similarity matrix
             sim_matrix = np.zeros((len(titles), len(titles)))
@@ -107,6 +114,9 @@ class BaseDiversifier(ABC):
                       ]
         :param top_k: How many items to retrieve after diversification.
         :param kwargs: Additional algorithm-specific parameters (e.g. lambda).
+                       May include:
+                       - title2embedding: Dict mapping titles to precomputed embeddings
+                       - precomputed_sim_matrix: Precomputed similarity matrix for these items
         :return: A 2D array of shape (top_k, 3), diversified.
         """
         pass
