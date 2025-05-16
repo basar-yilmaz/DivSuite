@@ -3,9 +3,11 @@
 import os
 import csv
 import matplotlib.pyplot as plt
+import scienceplots  # noqa: F401
 from typing import List
 from src.utils.logger import get_logger
 
+plt.style.use(["science", "ieee", "no-latex"])
 logger = get_logger(__name__)
 
 
@@ -64,19 +66,6 @@ def create_plots(
     experiment_params: dict,
     baseline_metrics: dict,
 ) -> str:
-    """
-    Create and save visualization plots.
-
-    Args:
-        results: List of result dictionaries.
-        results_folder: Directory to save plots.
-        timestamp: Timestamp string for filename.
-        experiment_params: Experiment parameters.
-        baseline_metrics: Baseline metrics for comparison.
-
-    Returns:
-        str: Path to the created plot file.
-    """
     if not results:
         logger.warning("No results to plot")
         return ""
@@ -85,75 +74,110 @@ def create_plots(
     ndcg_vals = [res["ndcg"] for res in results]
     emb_ild_vals = [res["emb_ild"] for res in results]
 
-    # Calculate marker frequency
     def get_markevery(data_length):
         return max(1, data_length // 10) if data_length > 0 else 1
 
-    fig, ax1 = plt.subplots(figsize=(12, 6))
+    # Colorblind-friendly palette
+    colors = {
+        "ndcg": "#1f77b4",
+        "emb_ild": "#ff7f0e",
+        "cat_ild": "#2ca02c",
+    }
 
-    # Plot NDCG
-    color1 = (31 / 255, 119 / 255, 180 / 255)  # Blue
-    ax1.set_xlabel(
-        f"{experiment_params['diversifier_param_name'].capitalize()} Parameter"
-    )
-    ax1.set_ylabel("NDCG", color=color1)
+    fig, ax1 = plt.subplots(figsize=(6.5, 3))
+    ax1.grid(True, which="both", linestyle="--", linewidth=0.5, alpha=0.15)
+
+    ax1.set_xlabel(r"$\lambda$", fontsize=10)
+    ax1.set_ylabel("NDCG", fontsize=10, color=colors["ndcg"])
     line1 = ax1.plot(
         param_vals,
         ndcg_vals,
-        color=color1,
+        color=colors["ndcg"],
         marker="o",
-        markevery=get_markevery(len(param_vals)),
+        markersize=3,
+        linewidth=1,
+        # markevery=get_markevery(len(param_vals)),
+        markevery=1,
         label="NDCG",
     )
-    ax1.tick_params(axis="y", labelcolor=color1)
+    ax1.tick_params(axis="y", labelcolor=colors["ndcg"], labelsize=8)
+    ax1.tick_params(axis="x", labelsize=8)
 
-    # Plot Embedding ILD
     ax2 = ax1.twinx()
-    color2 = (255 / 255, 127 / 255, 14 / 255)  # Orange
-    ax2.set_ylabel("Embedding ILD", color=color2)
+    ax2.set_ylabel("Embedding ILD", fontsize=10, color=colors["emb_ild"])
     line2 = ax2.plot(
         param_vals,
         emb_ild_vals,
-        color=color2,
+        color=colors["emb_ild"],
         marker="x",
-        markevery=get_markevery(len(param_vals)),
+        markersize=4,
+        linewidth=1,
+        # markevery=get_markevery(len(param_vals)),
+        markevery=1,
         label="Emb-ILD",
     )
-    ax2.tick_params(axis="y", labelcolor=color2)
+    ax2.tick_params(axis="y", labelcolor=colors["emb_ild"], labelsize=8)
 
     lines = line1 + line2
     labels = [line.get_label() for line in lines]
 
-    # Add Category ILD if enabled
-    if experiment_params["use_category_ild"]:
+    if experiment_params.get("use_category_ild", False):
         cat_ild_vals = [res["cat_ild"] for res in results]
         ax3 = ax1.twinx()
         ax3.spines["right"].set_position(("outward", 60))
-        color3 = (44 / 255, 160 / 255, 44 / 255)  # Green
-        ax3.set_ylabel("Category ILD", color=color3)
+        ax3.set_ylabel("Category ILD", fontsize=10, color=colors["cat_ild"])
         line3 = ax3.plot(
             param_vals,
             cat_ild_vals,
-            color=color3,
+            color=colors["cat_ild"],
             marker="s",
-            markevery=get_markevery(len(param_vals)),
+            markersize=4,
+            linewidth=1,
+            # markevery=get_markevery(len(param_vals)),
+            markevery=1,
             label="Cat-ILD",
         )
+        ax3.tick_params(axis="y", labelcolor=colors["cat_ild"], labelsize=8)
         lines += line3
         labels.append("Cat-ILD")
 
-    ax1.legend(lines, labels, loc="center left")
-    ax1.grid(True, alpha=0.3)
+    ax1.legend(
+        lines,
+        labels,
+        fontsize=8,
+        frameon=False,
+        loc="upper left",  # vertical, inside top-left
+        bbox_to_anchor=(0.02, 0.8),  # fine-tuned near y-axis
+        handletextpad=0.4,
+        labelspacing=0.3,
+        borderaxespad=0.0,
+    )
 
-    plt.title(f"{experiment_params['diversifier_cls'].__name__} Performance")
-    plt.tight_layout()
+    for spine in ["top", "right"]:
+        ax1.spines[spine].set_visible(False)
+        ax2.spines[spine].set_visible(False)
+        ax3.spines[spine].set_visible(False)
+
+    algo_name = experiment_params["diversifier_cls"].__name__.replace("Diversifier", "")
+    plt.title(f"{algo_name} Algorithm Performance", fontsize=11)
+    plt.tight_layout(pad=0.5)
 
     threshold = experiment_params.get("threshold_drop", "NA")
-    plot_filename = os.path.join(
+
+    # Save as PNG
+    png_filename = os.path.join(
         results_folder, f"diversification_metrics_drop{threshold}_{timestamp}.png"
     )
-    plt.savefig(plot_filename)
-    logger.info("Plot saved to %s", plot_filename)
+    plt.savefig(png_filename, dpi=300, bbox_inches="tight")
+
+    # Save as vectorized PDF
+    pdf_filename = os.path.join(
+        results_folder, f"diversification_metrics_drop{threshold}_{timestamp}.pdf"
+    )
+    # plt.savefig(pdf_filename, format="pdf", bbox_inches="tight")
+    plt.savefig(pdf_filename, dpi=300, bbox_inches="tight")
+
+    logger.info("Plots saved to %s and %s", png_filename, pdf_filename)
     plt.close()
 
-    return plot_filename
+    return pdf_filename

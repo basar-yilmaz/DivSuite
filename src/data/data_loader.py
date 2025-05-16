@@ -3,6 +3,8 @@
 import pickle
 from pathlib import Path
 from typing import Tuple, Dict, List, Any
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
 
 from src.data.data_utils import load_data_and_convert
 from src.data.category_utils import load_movie_categories
@@ -100,7 +102,17 @@ def load_experiment_data(
             topk_list = pickle.load(f)
         with open(topk_scores_path, "rb") as f:
             topk_scores = pickle.load(f)
-        logger.info(f"Loaded ranking data from {topk_list_path} and {topk_scores_path}")
+            # Normalize each row to be between 0-1
+            topk_scores = topk_scores.numpy()
+            topk_scores = np.array(
+                [
+                    MinMaxScaler().fit_transform(row.reshape(-1, 1)).flatten()
+                    for row in topk_scores
+                ]
+            )
+        logger.info(
+            f"Loaded and normalized ranking data from {topk_list_path} and {topk_scores_path}"
+        )
     except (pickle.UnpicklingError, FileNotFoundError, EOFError) as e:
         logger.error(f"Error loading ranking data: {e}")
         raise RuntimeError(
@@ -122,12 +134,6 @@ def load_experiment_data(
         items, scores = topk_list[idx], topk_scores[idx]
         # Ensure the items retrieved from topk_list are valid indices for converted_data
         try:
-            # Assuming items in topk_list are indices/keys into converted_data[idx] (needs verification based on actual data structure)
-            # If items are actual titles/IDs, this logic needs adjustment
-            # Example assumes items are indices:
-            # titles = [converted_data[idx][item_index] for item_index in items] # Adjust if 'items' are not indices
-            # This part depends heavily on the structure of topk_list and converted_data
-            # Using the original logic for now, assuming items are indices to titles in converted_data[idx]
             titles = [converted_data[idx][item] for item in items]  # Original logic
             rankings[idx + 1] = (titles, scores.tolist())
         except IndexError:

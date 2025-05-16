@@ -9,8 +9,10 @@ dependencies = [
     "matplotlib>=3.10.1",
     "numpy>=2.2.4",
     "pandas>=2.2.3",
+    "peft>=0.15.2",
     "pre-commit>=4.2.0",
+    "scienceplots>=2.1.1",
     "scikit-learn>=1.6.1",
-    "sentence-transformers>=4.0.2",
+    "sentence-transformers==4.1.0",
     "transformers>=4.51.2",
 ]

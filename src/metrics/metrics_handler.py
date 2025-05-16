@@ -232,7 +232,7 @@ def run_diversification_loop(
 
     for param_value in param_values:
         logger.info(
-            "Running diversification with %s=%.2f",
+            "Running diversification with %s=%.4f",
             experiment_params["diversifier_param_name"],
             param_value,
         )
@@ -508,7 +508,7 @@ def _log_diversification_metrics(
 
     if use_category_ild:
         logger.info(
-            "%s=%.3f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, Emb-ILD@%d=%.4f (%.2f%%), Cat-ILD@%d=%.4f (%.2f%%)",
+            "%s=%.4f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, Emb-ILD@%d=%.4f (%.2f%%), Cat-ILD@%d=%.4f (%.2f%%)",
             param_name,
             param_value,
             top_k,
@@ -527,7 +527,7 @@ def _log_diversification_metrics(
         )
     else:
         logger.info(
-            "%s=%.3f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, Emb-ILD@%d=%.4f (%.2f%%)",
+            "%s=%.4f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, Emb-ILD@%d=%.4f (%.2f%%)",
             param_name,
             param_value,
             top_k,
@@ -550,7 +550,7 @@ def _log_early_stopping_message(
     """Log message when stopping early due to NDCG drop."""
     if use_category_ild:
         logger.warning(
-            "Stopping: NDCG dropped by %.2f%%. Best MRR: %.4f, Best Emb-ILD before drop: %.4f, Best Cat-ILD before drop: %.4f",
+            "Stopping: NDCG dropped by %.4f%%. Best MRR: %.4f, Best Emb-ILD before drop: %.4f, Best Cat-ILD before drop: %.4f",
             ndcg_drop,
             max([r["mrr"] for r in results]) if results else baseline_metrics["mrr"],
             max([r["emb_ild"] for r in results])
@@ -562,7 +562,7 @@ def _log_early_stopping_message(
         )
     else:
         logger.warning(
-            "Stopping: NDCG dropped by %.2f%%. Best MRR: %.4f, Best Emb-ILD before drop: %.4f",
+            "Stopping: NDCG dropped by %.4f%%. Best MRR: %.4f, Best Emb-ILD before drop: %.4f",
             ndcg_drop,
             max([r["mrr"] for r in results]) if results else baseline_metrics["mrr"],
             max([r["emb_ild"] for r in results])
