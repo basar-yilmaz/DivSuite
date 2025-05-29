@@ -6,9 +6,11 @@ In order to implement a new diversifier, you need extend this class and implemen
 """
 
 from abc import ABC, abstractmethod
+
 import numpy as np
-from src.metrics.metrics_utils import load_similarity_scores
 from sklearn.metrics.pairwise import cosine_similarity
+
+from src.metrics.metrics_utils import load_similarity_scores
 
 
 class BaseDiversifier(ABC):
@@ -20,8 +22,8 @@ class BaseDiversifier(ABC):
         self,
         embedder=None,
         use_similarity_scores: bool = False,
-        item_id_mapping: dict = None,
-        similarity_scores_path: str = None,
+        item_id_mapping: dict | None = None,
+        similarity_scores_path: str | None = None,
         **kwargs,
     ):
         """

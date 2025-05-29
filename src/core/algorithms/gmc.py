@@ -1,4 +1,5 @@
 import numpy as np
+
 from src.core.algorithms.base import BaseDiversifier
 from src.core.embedders.base_embedder import BaseEmbedder
 
@@ -13,8 +14,8 @@ class GMCDiversifier(BaseDiversifier):
         embedder: BaseEmbedder,
         lambda_: float = 0.5,
         use_similarity_scores: bool = False,
-        item_id_mapping: dict = None,
-        similarity_scores_path: str = None,
+        item_id_mapping: dict | None = None,
+        similarity_scores_path: str | None = None,
     ):
         super().__init__(
             embedder=embedder,
@@ -28,7 +29,7 @@ class GMCDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,  # shape (N, 3): [id, title, relevance]
         top_k: int = 10,
-        title2embedding: dict = None,
+        title2embedding: dict | None = None,
         **kwargs,
     ) -> np.ndarray:
         """

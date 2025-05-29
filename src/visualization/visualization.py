@@ -1,10 +1,11 @@
 """Module for visualization and results logging."""
 
-import os
 import csv
+import os
+
 import matplotlib.pyplot as plt
 import scienceplots  # noqa: F401
-from typing import List
+
 from src.utils.logger import get_logger
 
 plt.style.use(["science", "ieee", "no-latex"])
@@ -12,7 +13,7 @@ logger = get_logger(__name__)
 
 
 def log_metrics_to_csv(
-    results: List[dict],
+    results: list[dict],
     results_folder: str,
     timestamp: str,
     experiment_params: dict,
@@ -21,13 +22,13 @@ def log_metrics_to_csv(
     Log metrics to CSV file.
 
     Args:
-        results: List of result dictionaries.
-        results_folder: Directory to save results.
-        timestamp: Timestamp string for filename.
-        experiment_params: Experiment parameters.
+            results: List of result dictionaries.
+            results_folder: Directory to save results.
+            timestamp: Timestamp string for filename.
+            experiment_params: Experiment parameters.
 
     Returns:
-        str: Path to the created CSV file.
+            str: Path to the created CSV file.
     """
     threshold = experiment_params.get("threshold_drop", "NA")
     csv_filename = os.path.join(
@@ -60,7 +61,7 @@ def log_metrics_to_csv(
 
 
 def create_plots(
-    results: List[dict],
+    results: list[dict],
     results_folder: str,
     timestamp: str,
     experiment_params: dict,
@@ -153,10 +154,12 @@ def create_plots(
         borderaxespad=0.0,
     )
 
+    axes = [ax1, ax2]
+    if experiment_params.get("use_category_ild", False):
+        axes.append(ax3)
     for spine in ["top", "right"]:
-        ax1.spines[spine].set_visible(False)
-        ax2.spines[spine].set_visible(False)
-        ax3.spines[spine].set_visible(False)
+        for ax in axes:
+            ax.spines[spine].set_visible(False)
 
     algo_name = experiment_params["diversifier_cls"].__name__.replace("Diversifier", "")
     plt.title(f"{algo_name} Algorithm Performance", fontsize=11)

@@ -1,8 +1,7 @@
 """Utilities for experiment setup and configuration."""
 
-import os
 import datetime
-from typing import Tuple, Type
+import os
 
 from src.core.embedders.ste_embedder import STEmbedder
 from src.utils.logger import get_logger
@@ -80,7 +79,7 @@ def get_embedding_params(config: dict) -> dict:
     }
 
 
-def _get_diversifier_class(class_name: str) -> Type:
+def _get_diversifier_class(class_name: str) -> type:
     """
     Get diversifier class from its name using the algorithm registry.
 
@@ -95,9 +94,10 @@ def _get_diversifier_class(class_name: str) -> Type:
         ValueError: If the algorithm is not registered or module cannot be imported
     """
     import importlib
+
     from src.utils.algorithm_registry import (
-        get_registered_algorithms,
         get_algorithm_info,
+        get_registered_algorithms,
         normalize_algorithm_name,
     )
 
@@ -122,18 +122,18 @@ def _get_diversifier_class(class_name: str) -> Type:
             return getattr(module, algorithm_info["class"])
         except (ImportError, AttributeError) as e:
             logger.error(
-                f"Failed to import {algorithm_info['class']} from {algorithm_info['module']}: {str(e)}"
+                f"Failed to import {algorithm_info['class']} from {algorithm_info['module']}: {e!s}"
             )
             raise ValueError(
                 f"Failed to load algorithm '{class_name}'. Please check if the module and class exist."
             ) from e
 
     except Exception as e:
-        logger.error(f"Unexpected error loading algorithm '{class_name}': {str(e)}")
+        logger.error(f"Unexpected error loading algorithm '{class_name}': {e!s}")
         raise
 
 
-def setup_results_directory(diversifier_cls: Type) -> Tuple[str, str]:
+def setup_results_directory(diversifier_cls: type) -> tuple[str, str]:
     """
     Create results directory and generate timestamp.
 

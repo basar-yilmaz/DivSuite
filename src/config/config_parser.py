@@ -6,10 +6,11 @@ It also contains the mapping of diversifier names to their class names.
 """
 
 import argparse
-import yaml
-from typing import Dict, Any
 import json
 import os
+from typing import Any
+
+import yaml
 
 DIVERSIFIER_MAP = {
     "motley": "MotleyDiversifier",
@@ -95,15 +96,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str) -> dict[str, Any]:
     """Load configuration from YAML file."""
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         return yaml.safe_load(f)
 
 
 def merge_configs(
-    yaml_config: Dict[str, Any], args: argparse.Namespace
-) -> Dict[str, Any]:
+    yaml_config: dict[str, Any], args: argparse.Namespace
+) -> dict[str, Any]:
     """Merge YAML config with command line arguments. Arguments override YAML values."""
     config = yaml_config.copy()
 
@@ -166,7 +167,7 @@ def merge_configs(
     return config
 
 
-def print_config(config: Dict[str, Any]) -> None:
+def print_config(config: dict[str, Any]) -> None:
     """Print configuration in a formatted manner."""
     print("\n" + "=" * 50)
     print("EXPERIMENT CONFIGURATION")
@@ -175,7 +176,7 @@ def print_config(config: Dict[str, Any]) -> None:
     print("=" * 50 + "\n")
 
 
-def get_config() -> Dict[str, Any]:
+def get_config() -> dict[str, Any]:
     """Get final configuration by merging YAML and command line arguments."""
     args = parse_args()
     yaml_config = load_config(args.config)

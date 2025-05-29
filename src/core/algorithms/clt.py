@@ -1,8 +1,9 @@
 import numpy as np
-from src.core.algorithms.base import BaseDiversifier
-from src.utils.utils import compute_pairwise_cosine
-from src.core.embedders.base_embedder import BaseEmbedder
 from sklearn_extra.cluster import KMedoids
+
+from src.core.algorithms.base import BaseDiversifier
+from src.core.embedders.base_embedder import BaseEmbedder
+from src.utils.utils import compute_pairwise_cosine
 
 
 class CLTDiversifier(BaseDiversifier):
@@ -30,7 +31,7 @@ class CLTDiversifier(BaseDiversifier):
         items: np.ndarray,  # shape (N, 3) => [id, title, relevance_score]
         top_k: int = 10,
         pick_strategy: str = "medoid",  # or "highest_relevance"
-        title2embedding: dict = None,
+        title2embedding: dict | None = None,
         **kwargs,
     ) -> np.ndarray:
         """

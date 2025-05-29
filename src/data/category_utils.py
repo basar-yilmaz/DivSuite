@@ -1,6 +1,7 @@
 """Utilities for handling movie categories and genres."""
 
 import csv
+
 import numpy as np
 
 GENRES = [
@@ -58,7 +59,7 @@ def load_movie_categories(mapping_csv_path: str) -> tuple:
     title_to_categories = {}
     title_to_vector = {}
 
-    with open(mapping_csv_path, "r", encoding="utf-8") as map_file:
+    with open(mapping_csv_path, encoding="utf-8") as map_file:
         reader = csv.DictReader(map_file)
         for row in reader:
             title = row["item_id"]

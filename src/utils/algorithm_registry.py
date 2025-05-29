@@ -1,7 +1,5 @@
 """Registry for mapping algorithm names to their implementations."""
 
-from typing import Dict, Optional
-
 # Main registry with canonical names
 ALGORITHM_REGISTRY = {
     # Standard algorithms
@@ -17,8 +15,8 @@ ALGORITHM_REGISTRY = {
 }
 
 # Create a case-insensitive lookup map
-_NORMALIZED_REGISTRY: Dict[str, str] = {
-    name.lower(): name for name in ALGORITHM_REGISTRY.keys()
+_NORMALIZED_REGISTRY: dict[str, str] = {
+    name.lower(): name for name in ALGORITHM_REGISTRY
 }
 # Add common variations
 _NORMALIZED_REGISTRY.update(
@@ -43,7 +41,7 @@ _NORMALIZED_REGISTRY.update(
 )
 
 
-def normalize_algorithm_name(name: str) -> Optional[str]:
+def normalize_algorithm_name(name: str) -> str | None:
     """
     Convert algorithm name to its canonical form.
 
@@ -61,7 +59,7 @@ def get_registered_algorithms():
     return list(ALGORITHM_REGISTRY.keys())
 
 
-def get_algorithm_info(name: str) -> Optional[Dict]:
+def get_algorithm_info(name: str) -> dict | None:
     """
     Get algorithm info from registry using case-insensitive lookup.
 

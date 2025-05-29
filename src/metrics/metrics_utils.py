@@ -1,18 +1,19 @@
 """Utilities for computing and evaluating recommendation metrics."""
 
-from typing import Any
-import numpy as np
 import pickle
+from typing import Any
+
+import numpy as np
+import pandas as pd
+from scipy.spatial.distance import pdist
 from sklearn.metrics import ndcg_score
 from sklearn.metrics.pairwise import cosine_similarity
-from scipy.spatial.distance import pdist
-import pandas as pd
 
 # Cache for storing loaded similarity scores
 _SIMILARITY_SCORES_CACHE = {}
 
 
-def load_similarity_scores(similarity_scores_path: str = None):
+def load_similarity_scores(similarity_scores_path: str | None = None):
     """
     Load similarity scores from file and cache them for future use.
 
@@ -49,7 +50,7 @@ def load_similarity_scores(similarity_scores_path: str = None):
 def compute_average_ild_from_scores(
     topk_dict: dict,
     item_id_mapping: dict,
-    similarity_scores_path: str = None,
+    similarity_scores_path: str | None = None,
     topk: int = 5,
 ) -> float:
     """
@@ -73,7 +74,7 @@ def compute_average_ild_from_scores(
 
     ild_list = []
 
-    for user, value in topk_dict.items():
+    for _user, value in topk_dict.items():
         titles = value[0] if isinstance(value, tuple) and len(value) >= 1 else value
         titles = titles[: min(topk, len(titles))]
 
@@ -120,7 +121,7 @@ def compute_average_ild_from_scores(
 
 
 def compute_average_ild_batched(
-    topk_dict: dict, embedder, topk: int = 5, precomputed_embeddings: dict = None
+    topk_dict: dict, embedder, topk: int = 5, precomputed_embeddings: dict | None = None
 ) -> float:
     """
     Compute the average Intra-List Diversity (ILD) over all users using batch embedding computation.
@@ -204,10 +205,7 @@ def evaluate_recommendation_metrics(relevance_lists: list, k: int) -> tuple:
 
         # Calculate MRR for this user
         relevant_positions = np.where(rel_k == 1)[0]
-        if len(relevant_positions) > 0:
-            mrr = 1.0 / (relevant_positions[0] + 1)
-        else:
-            mrr = 0.0
+        mrr = 1.0 / (relevant_positions[0] + 1) if len(relevant_positions) > 0 else 0.0
 
         metrics.append((precision, recall, hit, ndcg, mrr))
 
@@ -271,7 +269,7 @@ def compute_average_category_ild_batched(
 def precompute_title_embeddings(
     rankings: dict,
     embedder: Any = None,
-    embedding_params: dict = None,
+    embedding_params: dict | None = None,
 ) -> dict:
     """
     Precompute embeddings for all unique titles (from each user's full recommendation list)
@@ -303,7 +301,7 @@ def precompute_title_embeddings(
         embeddings = np.array(embedder.encode_batch(unique_titles))
 
         # Return a mapping from title to embedding.
-        return dict(zip(unique_titles, embeddings))
+        return dict(zip(unique_titles, embeddings, strict=False))
 
 
 def load_precomputed_embeddings(

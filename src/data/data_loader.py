@@ -2,12 +2,13 @@
 
 import pickle
 from pathlib import Path
-from typing import Tuple, Dict, List, Any
+from typing import Any
+
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 
-from src.data.data_utils import load_data_and_convert
 from src.data.category_utils import load_movie_categories
+from src.data.data_utils import load_data_and_convert
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -44,7 +45,7 @@ def _resolve_and_validate_path(
 
 def load_experiment_data(
     config: dict, use_category_ild: bool
-) -> Tuple[Dict[int, Tuple[List[str], List[float]]], List[str], Any, Dict[Any, str]]:
+) -> tuple[dict[int, tuple[list[str], list[float]]], list[str], Any, dict[Any, str]]:
     """
     Load and prepare all data required for the experiment.
 

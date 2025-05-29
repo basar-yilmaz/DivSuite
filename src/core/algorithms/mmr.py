@@ -1,4 +1,5 @@
 import numpy as np
+
 from src.core.algorithms.base import BaseDiversifier
 from src.core.embedders.base_embedder import BaseEmbedder
 
@@ -9,8 +10,8 @@ class MMRDiversifier(BaseDiversifier):
         embedder: BaseEmbedder,
         lambda_: float = 0.5,
         use_similarity_scores: bool = False,
-        item_id_mapping: dict = None,
-        similarity_scores_path: str = None,
+        item_id_mapping: dict | None = None,
+        similarity_scores_path: str | None = None,
     ):
         super().__init__(
             embedder=embedder,
@@ -21,7 +22,11 @@ class MMRDiversifier(BaseDiversifier):
         self.lambda_ = lambda_
 
     def diversify(
-        self, items: np.ndarray, title2embedding: dict = None, top_k: int = 10, **kwargs
+        self,
+        items: np.ndarray,
+        title2embedding: dict | None = None,
+        top_k: int = 10,
+        **kwargs,
     ) -> np.ndarray:
         if items.shape[0] == 0:
             return items

@@ -1,10 +1,11 @@
 import numpy as np
+
 from src.core.algorithms.base import BaseDiversifier
 from src.core.embedders.base_embedder import BaseEmbedder
 
 
 class BSwapDiversifier(BaseDiversifier):
-    """
+    r"""
     Implements the BSWAP algorithm (Algorithm 3).
 
     Steps (roughly):
@@ -25,8 +26,8 @@ class BSwapDiversifier(BaseDiversifier):
         embedder: BaseEmbedder,
         theta_: float = 0.1,
         use_similarity_scores: bool = False,
-        item_id_mapping: dict = None,
-        similarity_scores_path: str = None,
+        item_id_mapping: dict | None = None,
+        similarity_scores_path: str | None = None,
     ):
         super().__init__(
             embedder=embedder,
@@ -40,7 +41,7 @@ class BSwapDiversifier(BaseDiversifier):
         self,
         items: np.ndarray,
         top_k: int = 10,
-        title2embedding: dict = None,
+        title2embedding: dict | None = None,
         **kwargs,
     ) -> np.ndarray:
         num_items = items.shape[0]

@@ -2,10 +2,9 @@
 Hugging Face Embedder Class
 """
 
-import torch
 import numpy as np
-from transformers import AutoTokenizer, AutoModel
-from typing import List
+import torch
+from transformers import AutoModel, AutoTokenizer
 
 from src.core.embedders.base_embedder import BaseEmbedder
 from src.utils.logger import get_logger
@@ -39,7 +38,7 @@ class HFEmbedder(BaseEmbedder):
         self.model.to(self.device)
         self.max_chunk_size = max_chunk_size
 
-    def encode_batch(self, texts: List[str]) -> np.ndarray:
+    def encode_batch(self, texts: list[str]) -> np.ndarray:
         """
         Encode the list of texts in chunks. Returns a 2D NumPy array (N, dim).
         """

@@ -1,6 +1,7 @@
 import logging
 import sys
-from colorama import init, Fore, Style
+
+from colorama import Fore, Style, init
 
 # Initialize colorama
 init(autoreset=True)

@@ -15,8 +15,8 @@ class SYDiversifier(BaseDiversifier):
         embedder: BaseEmbedder,
         threshold: float = 0.67,
         use_similarity_scores: bool = False,
-        item_id_mapping: dict = None,
-        similarity_scores_path: str = None,
+        item_id_mapping: dict | None = None,
+        similarity_scores_path: str | None = None,
     ):
         """
         :param embedder: An embedder instance (e.g. STEmbedder or HFEmbedder)
@@ -31,7 +31,11 @@ class SYDiversifier(BaseDiversifier):
         self.threshold = threshold
 
     def diversify(
-        self, items: np.ndarray, top_k: int = 10, title2embedding: dict = None, **kwargs
+        self,
+        items: np.ndarray,
+        top_k: int = 10,
+        title2embedding: dict | None = None,
+        **kwargs,
     ) -> np.ndarray:
         """
         Diversify the given array of items using the SY algorithm.

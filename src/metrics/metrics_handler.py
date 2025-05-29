@@ -1,17 +1,18 @@
 """Module for handling metric computation and diversification."""
 
+from typing import Any
+
 import numpy as np
-from typing import Dict, List, Tuple, Any
 from sklearn.metrics.pairwise import cosine_similarity
 
 from src.data.data_utils import create_relevance_lists
 from src.metrics.metrics_utils import (
+    compute_average_category_ild_batched,
     compute_average_ild_batched,
     compute_average_ild_from_scores,
-    compute_average_category_ild_batched,
     evaluate_recommendation_metrics,
-    precompute_title_embeddings,
     load_similarity_scores,
+    precompute_title_embeddings,
 )
 from src.utils.logger import get_logger
 
@@ -19,17 +20,17 @@ logger = get_logger(__name__)
 
 
 def compute_baseline_metrics(
-    rankings: Dict[int, Tuple[List[str], List[float]]],
-    pos_items: List[str],
+    rankings: dict[int, tuple[list[str], list[float]]],
+    pos_items: list[str],
     embedder: Any = None,
     top_k: int = 10,
     use_category_ild: bool = False,
     categories_data: Any = None,
     use_similarity_scores: bool = False,
-    similarity_scores_path: str = None,
-    item_id_mapping: Dict[str, int] = None,
-    embedding_params: dict = None,
-) -> Dict[str, Any]:
+    similarity_scores_path: str | None = None,
+    item_id_mapping: dict[str, int] | None = None,
+    embedding_params: dict | None = None,
+) -> dict[str, Any]:
     """
     Compute baseline metrics for non-diversified rankings.
 
@@ -109,13 +110,13 @@ def compute_baseline_metrics(
 
 
 def _precompute_similarity_matrices(
-    rankings: Dict[int, Tuple[List[str], List[float]]],
+    rankings: dict[int, tuple[list[str], list[float]]],
     embedder: Any,
-    precomputed_embeddings: Dict[str, np.ndarray] = None,
+    precomputed_embeddings: dict[str, np.ndarray] | None = None,
     use_similarity_scores: bool = False,
-    title_to_id_mapping: Dict[str, int] = None,
-    similarity_scores_path: str = None,
-) -> Dict[int, np.ndarray]:
+    title_to_id_mapping: dict[str, int] | None = None,
+    similarity_scores_path: str | None = None,
+) -> dict[int, np.ndarray]:
     """
     Precompute similarity matrices for all users to avoid redundant calculations.
 
@@ -188,14 +189,143 @@ def _precompute_similarity_matrices(
     return similarity_matrices
 
 
-def run_diversification_loop(
-    rankings: Dict[int, Tuple[List[str], List[float]]],
-    pos_items: List[str],
+def _process_diversification_step(
+    param_value: float,
+    rankings: dict[int, tuple[list[str], list[float]]],
+    pos_items: list[str],
     embedder: Any,
     experiment_params: dict,
     baseline_metrics: dict,
     categories_data: Any,
-) -> List[dict]:
+    similarity_matrices: dict[int, np.ndarray],
+    title_to_id_mapping: dict[str, int],
+    use_similarity_scores_globally: bool,
+) -> dict[str, Any]:
+    """
+    Process a single diversification step: create diversifier, run diversification, and compute metrics.
+    """
+    diversifier_kwargs = {experiment_params["diversifier_param_name"]: param_value}
+    if use_similarity_scores_globally:
+        if title_to_id_mapping is None:
+            raise ValueError(
+                "title_to_id_mapping is missing in baseline_metrics when use_similarity_scores is True."
+            )
+        diversifier_kwargs.update(
+            {
+                "item_id_mapping": title_to_id_mapping,
+                "similarity_scores_path": baseline_metrics["similarity_scores_path"],
+                "use_similarity_scores": True,
+            }
+        )
+
+    diversifier = experiment_params["diversifier_cls"](
+        embedder=embedder, **diversifier_kwargs
+    )
+
+    diversified_results = _run_diversification(
+        rankings,
+        diversifier,
+        top_k=experiment_params["top_k"],
+        precomputed_embeddings=baseline_metrics["precomputed_embeddings"],
+        precomputed_similarity_matrices=similarity_matrices,
+    )
+
+    current_metrics = _compute_and_log_metrics(
+        diversified_results,
+        pos_items,
+        diversifier,
+        experiment_params,
+        baseline_metrics,
+        categories_data,
+        param_value,
+        title_to_id_mapping=title_to_id_mapping,
+    )
+    return current_metrics
+
+
+def _refined_search_strategy(
+    last_good_metrics: dict[str, Any],
+    param_that_failed: float,
+    rankings: dict[int, tuple[list[str], list[float]]],
+    pos_items: list[str],
+    embedder: Any,
+    experiment_params: dict,
+    baseline_metrics: dict,
+    categories_data: Any,
+    similarity_matrices: dict[int, np.ndarray],
+    title_to_id_mapping: dict[str, int],
+    use_similarity_scores_globally: bool,
+    num_settings_tested_so_far: int,
+) -> tuple[dict[str, Any], int]:
+    """
+    Execute the refined search strategy when NDCG drop threshold is exceeded.
+    Returns the best metric found during refined search and the number of additional tests performed.
+    """
+    param_of_last_good = last_good_metrics[experiment_params["diversifier_param_name"]]
+    original_param_step = experiment_params["param_step"]
+    refined_param_step = original_param_step * 0.01
+
+    logger.info(
+        f"NDCG drop threshold exceeded at {experiment_params['diversifier_param_name']}={param_that_failed:.4f}. "
+        f"Rolling back to {experiment_params['diversifier_param_name']}={param_of_last_good:.4f} and starting refined search "
+        f"towards {param_that_failed:.4f} with step {refined_param_step:.6f}."
+    )
+
+    best_metric_from_refined_search = last_good_metrics
+    candidate_param_for_refined_search = param_of_last_good
+    additional_tests_in_refined_search = 0
+
+    while True:
+        candidate_param_for_refined_search += refined_param_step
+        if (
+            candidate_param_for_refined_search >= param_that_failed - 1e-9
+        ):  # float comparison
+            break
+
+        additional_tests_in_refined_search += 1
+        current_total_tests = (
+            num_settings_tested_so_far + additional_tests_in_refined_search
+        )
+        logger.info(
+            "Running refined diversification with %s=%.4f (Total settings tested: %d)",
+            experiment_params["diversifier_param_name"],
+            candidate_param_for_refined_search,
+            current_total_tests,
+        )
+
+        refined_loop_metrics = _process_diversification_step(
+            param_value=candidate_param_for_refined_search,
+            rankings=rankings,
+            pos_items=pos_items,
+            embedder=embedder,
+            experiment_params=experiment_params,
+            baseline_metrics=baseline_metrics,
+            categories_data=categories_data,
+            similarity_matrices=similarity_matrices,
+            title_to_id_mapping=title_to_id_mapping,
+            use_similarity_scores_globally=use_similarity_scores_globally,
+        )
+
+        if (refined_loop_metrics["ndcg_drop"] / 100) > experiment_params[
+            "threshold_drop"
+        ]:
+            break  # This refined step failed; the previous best_metric_from_refined_search is our choice
+        else:
+            best_metric_from_refined_search = (
+                refined_loop_metrics  # This refined step is good
+            )
+
+    return best_metric_from_refined_search, additional_tests_in_refined_search
+
+
+def run_diversification_loop(
+    rankings: dict[int, tuple[list[str], list[float]]],
+    pos_items: list[str],
+    embedder: Any,
+    experiment_params: dict,
+    baseline_metrics: dict,
+    categories_data: Any,
+) -> tuple[list[dict], int]:
     """
     Run the main diversification loop with varying parameters.
 
@@ -208,9 +338,12 @@ def run_diversification_loop(
         categories_data: Category information if needed.
 
     Returns:
-        list: List of result dictionaries for each parameter value.
+        tuple: A tuple containing:
+            - list: List of result dictionaries for each parameter value that was kept.
+            - int: Total number of parameter settings actually tested.
     """
-    results = []
+    actual_results = []  # Stores the final list of metrics
+    num_settings_tested = 0  # Counter for all tested settings
     param_values = np.arange(
         experiment_params["param_start"],
         experiment_params["param_end"] + experiment_params["param_step"] / 2,
@@ -218,89 +351,101 @@ def run_diversification_loop(
     )
 
     title_to_id_mapping = baseline_metrics.get("title_to_id_mapping")
+    use_similarity_scores_globally = baseline_metrics.get(
+        "use_similarity_scores", False
+    )
+    similarity_scores_path = baseline_metrics.get("similarity_scores_path")
 
     # Precompute similarity matrices for all users to avoid redundant calculations
-    use_similarity_scores = baseline_metrics.get("use_similarity_scores", False)
     similarity_matrices = _precompute_similarity_matrices(
         rankings=rankings,
         embedder=embedder,
         precomputed_embeddings=baseline_metrics["precomputed_embeddings"],
-        use_similarity_scores=use_similarity_scores,
+        use_similarity_scores=use_similarity_scores_globally,
         title_to_id_mapping=title_to_id_mapping,
-        similarity_scores_path=baseline_metrics.get("similarity_scores_path"),
+        similarity_scores_path=similarity_scores_path,
     )
 
-    for param_value in param_values:
+    for param_idx, param_value in enumerate(param_values):
+        num_settings_tested += 1
         logger.info(
-            "Running diversification with %s=%.4f",
+            "Running diversification with %s=%.4f (Main loop %d/%d, Total settings tested: %d)",
             experiment_params["diversifier_param_name"],
             param_value,
+            param_idx + 1,
+            len(param_values),
+            num_settings_tested,
         )
 
-        diversifier_kwargs = {experiment_params["diversifier_param_name"]: param_value}
-
-        if baseline_metrics.get("use_similarity_scores", False):
-            # Pass necessary info for similarity lookup if needed by the diversifier itself
-            # even though matrix is precomputed
-            if title_to_id_mapping is None:
-                raise ValueError(
-                    "title_to_id_mapping is missing in baseline_metrics when use_similarity_scores is True."
-                )
-            diversifier_kwargs.update(
-                {
-                    "item_id_mapping": title_to_id_mapping,
-                    "similarity_scores_path": baseline_metrics[
-                        "similarity_scores_path"
-                    ],
-                    "use_similarity_scores": True,
-                }
-            )
-        # Initialize the diversifier *with* the use_similarity_scores flag etc.,
-        # but it will use the precomputed matrix passed to diversify()
-        diversifier = experiment_params["diversifier_cls"](
-            embedder=embedder, **diversifier_kwargs
-        )
-
-        diversified_results = _run_diversification(
-            rankings,
-            diversifier,
-            top_k=experiment_params["top_k"],
-            precomputed_embeddings=baseline_metrics["precomputed_embeddings"],
-            precomputed_similarity_matrices=similarity_matrices,
-        )
-
-        metrics = _compute_and_log_metrics(
-            diversified_results,
-            pos_items,
-            diversifier,
-            experiment_params,
-            baseline_metrics,
-            categories_data,
-            param_value,
+        current_metrics = _process_diversification_step(
+            param_value=param_value,
+            rankings=rankings,
+            pos_items=pos_items,
+            embedder=embedder,
+            experiment_params=experiment_params,
+            baseline_metrics=baseline_metrics,
+            categories_data=categories_data,
+            similarity_matrices=similarity_matrices,
             title_to_id_mapping=title_to_id_mapping,
+            use_similarity_scores_globally=use_similarity_scores_globally,
         )
 
-        results.append(metrics)
+        ndcg_drop_exceeded = (current_metrics["ndcg_drop"] / 100) > experiment_params[
+            "threshold_drop"
+        ]
 
-        if metrics["ndcg_drop"] / 100 > experiment_params["threshold_drop"]:
-            _log_early_stopping_message(
-                metrics["ndcg_drop"],
-                results,
-                baseline_metrics,
-                experiment_params["use_category_ild"],
-            )
-            break
+        if ndcg_drop_exceeded:
+            if param_idx > 0 and actual_results:  # We have a previous "good" result
+                best_refined_metric, additional_tests = _refined_search_strategy(
+                    last_good_metrics=actual_results[-1],
+                    param_that_failed=param_value,
+                    rankings=rankings,
+                    pos_items=pos_items,
+                    embedder=embedder,
+                    experiment_params=experiment_params,
+                    baseline_metrics=baseline_metrics,
+                    categories_data=categories_data,
+                    similarity_matrices=similarity_matrices,
+                    title_to_id_mapping=title_to_id_mapping,
+                    use_similarity_scores_globally=use_similarity_scores_globally,
+                    num_settings_tested_so_far=num_settings_tested,
+                )
+                num_settings_tested += additional_tests
+                actual_results[-1] = best_refined_metric
 
-    return results
+                _log_early_stopping_message(
+                    best_refined_metric[
+                        "ndcg_drop"
+                    ],  # Use the ndcg_drop from the best refined metric
+                    actual_results,  # actual_results already updated
+                    baseline_metrics,
+                    experiment_params["use_category_ild"],
+                )
+                break  # Break the main param_value loop
+            else:
+                # First iteration (param_idx == 0) or no prior actual_results, and it exceeded threshold
+                actual_results.append(current_metrics)  # Add the failing metric
+                _log_early_stopping_message(
+                    current_metrics["ndcg_drop"],
+                    actual_results,  # Will contain just the one failing metric
+                    baseline_metrics,
+                    experiment_params["use_category_ild"],
+                )
+                break  # Break main loop
+        else:
+            # NDCG drop is acceptable
+            actual_results.append(current_metrics)
+
+    return actual_results, num_settings_tested
 
 
 def _run_diversification(
-    rankings: Dict[int, Tuple[List[str], List[float]]],
+    rankings: dict[int, tuple[list[str], list[float]]],
     diversifier: Any,
     top_k: int = 10,
-    precomputed_embeddings: Dict[str, np.ndarray] = None,
-    precomputed_similarity_matrices: Dict[int, np.ndarray] = None,
-) -> Dict[int, Tuple[List[str], List[float]]]:
+    precomputed_embeddings: dict[str, np.ndarray] | None = None,
+    precomputed_similarity_matrices: dict[int, np.ndarray] | None = None,
+) -> dict[int, tuple[list[str], list[float]]]:
     """
     Apply diversification to recommendation lists.
 
@@ -332,7 +477,9 @@ def _run_diversification(
         items = np.array(
             [
                 [i, title, float(score)]
-                for i, (title, score) in enumerate(zip(titles, relevance_scores))
+                for i, (title, score) in enumerate(
+                    zip(titles, relevance_scores, strict=False)
+                )
             ],
             dtype=object,
         )
@@ -368,14 +515,14 @@ def _run_diversification(
 
 
 def _compute_and_log_metrics(
-    diversified_results: Dict[int, Tuple[List[str], List[float]]],
-    pos_items: List[str],
+    diversified_results: dict[int, tuple[list[str], list[float]]],
+    pos_items: list[str],
     diversifier: Any,
     experiment_params: dict,
     baseline_metrics: dict,
     categories_data: Any,
     param_value: float,
-    title_to_id_mapping: Dict[str, int] = None,
+    title_to_id_mapping: dict[str, int] | None = None,
 ) -> dict:
     """Compute and log metrics for the current diversification run."""
     relevance_lists_div = create_relevance_lists(diversified_results, pos_items)
@@ -543,29 +690,28 @@ def _log_diversification_metrics(
 
 def _log_early_stopping_message(
     ndcg_drop: float,
-    results: List[dict],
+    results: list[dict],
     baseline_metrics: dict,
     use_category_ild: bool,
 ) -> None:
     """Log message when stopping early due to NDCG drop."""
+    if not results:
+        return
+
+    last_result = results[-1]
     if use_category_ild:
         logger.warning(
-            "Stopping: NDCG dropped by %.4f%%. Best MRR: %.4f, Best Emb-ILD before drop: %.4f, Best Cat-ILD before drop: %.4f",
+            "Stopping: NDCG dropped by %.4f%%. NDCG: %.4f, MRR before drop: %.4f, Emb-ILD before drop: %.4f, Cat-ILD before drop: %.4f",
             ndcg_drop,
-            max([r["mrr"] for r in results]) if results else baseline_metrics["mrr"],
-            max([r["emb_ild"] for r in results])
-            if results
-            else baseline_metrics["emb_ild"],
-            max([r["cat_ild"] for r in results])
-            if results
-            else baseline_metrics["cat_ild"],
+            last_result["ndcg"],
+            last_result["mrr"],
+            last_result["emb_ild"],
+            last_result["cat_ild"],
         )
     else:
         logger.warning(
-            "Stopping: NDCG dropped by %.4f%%. Best MRR: %.4f, Best Emb-ILD before drop: %.4f",
+            "Stopping: NDCG dropped by %.4f%%. MRR before drop: %.4f, Emb-ILD before drop: %.4f",
             ndcg_drop,
-            max([r["mrr"] for r in results]) if results else baseline_metrics["mrr"],
-            max([r["emb_ild"] for r in results])
-            if results
-            else baseline_metrics["emb_ild"],
+            last_result["mrr"],
+            last_result["emb_ild"],
         )

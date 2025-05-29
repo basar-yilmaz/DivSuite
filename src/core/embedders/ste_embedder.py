@@ -2,9 +2,8 @@
 Sentence Transformers Embedder Class
 """
 
-from sentence_transformers import SentenceTransformer
 import numpy as np
-from typing import List
+from sentence_transformers import SentenceTransformer
 
 from src.core.embedders.base_embedder import BaseEmbedder
 from src.utils.logger import get_logger
@@ -37,7 +36,7 @@ class STEmbedder(BaseEmbedder):
         self.pool = None
         self.pool = self.model.start_multi_process_pool()
 
-    def encode_batch(self, texts: List[str]) -> np.ndarray:
+    def encode_batch(self, texts: list[str]) -> np.ndarray:
         """
         Encodes a list of strings into a 2D NumPy array of shape (N, embed_dim).
         """

@@ -1,22 +1,24 @@
 """Module for handling diversification experiment pipeline."""
 
+import time
+
 from src.data.data_loader import load_experiment_data
-from src.utils.experiment_utils import (
-    get_embedding_params,
-    get_experiment_params,
-    setup_results_directory,
-    initialize_embedder,
-    get_similarity_params,
-)
 from src.metrics.metrics_handler import (
     compute_baseline_metrics,
     run_diversification_loop,
 )
-from src.visualization.visualization import (
-    log_metrics_to_csv,
-    create_plots,
+from src.utils.experiment_utils import (
+    get_embedding_params,
+    get_experiment_params,
+    get_similarity_params,
+    initialize_embedder,
+    setup_results_directory,
 )
 from src.utils.logger import get_logger
+from src.visualization.visualization import (
+    create_plots,
+    log_metrics_to_csv,
+)
 
 logger = get_logger(__name__)
 
@@ -67,7 +69,8 @@ def run_diversification_pipeline(config: dict) -> None:
         item_id_mapping=item_id_mapping,
     )
 
-    results = run_diversification_loop(
+    start_time = time.time()
+    results, total_settings_tested = run_diversification_loop(
         rankings=rankings,
         pos_items=pos_items,
         embedder=embedder,
@@ -75,6 +78,17 @@ def run_diversification_pipeline(config: dict) -> None:
         baseline_metrics=baseline_metrics,
         categories_data=categories_data,
     )
+    end_time = time.time()
+    total_duration = end_time - start_time
+
+    if total_settings_tested > 0:
+        avg_time_per_setting = total_duration / total_settings_tested
+        logger.info(f"Total parameter settings tested: {total_settings_tested}")
+        logger.info(
+            f"Average time per parameter setting: {avg_time_per_setting:.2f} seconds"
+        )
+    else:
+        logger.info("No parameter settings were tested.")
 
     # Log and visualize results
     csv_filename = log_metrics_to_csv(
