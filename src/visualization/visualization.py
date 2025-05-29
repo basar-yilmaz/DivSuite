@@ -105,7 +105,7 @@ def create_plots(
     ax1.tick_params(axis="x", labelsize=8)
 
     ax2 = ax1.twinx()
-    ax2.set_ylabel("Embedding ILD", fontsize=10, color=colors["emb_ild"])
+    ax2.set_ylabel("ILD-semantic", fontsize=10, color=colors["emb_ild"])
     line2 = ax2.plot(
         param_vals,
         emb_ild_vals,
@@ -115,7 +115,7 @@ def create_plots(
         linewidth=1,
         # markevery=get_markevery(len(param_vals)),
         markevery=1,
-        label="Emb-ILD",
+        label="ILD-sem",
     )
     ax2.tick_params(axis="y", labelcolor=colors["emb_ild"], labelsize=8)
 
@@ -126,7 +126,7 @@ def create_plots(
         cat_ild_vals = [res["cat_ild"] for res in results]
         ax3 = ax1.twinx()
         ax3.spines["right"].set_position(("outward", 60))
-        ax3.set_ylabel("Category ILD", fontsize=10, color=colors["cat_ild"])
+        ax3.set_ylabel("ILD-genre", fontsize=10, color=colors["cat_ild"])
         line3 = ax3.plot(
             param_vals,
             cat_ild_vals,
@@ -136,11 +136,11 @@ def create_plots(
             linewidth=1,
             # markevery=get_markevery(len(param_vals)),
             markevery=1,
-            label="Cat-ILD",
+            label="ILD-genre",
         )
         ax3.tick_params(axis="y", labelcolor=colors["cat_ild"], labelsize=8)
         lines += line3
-        labels.append("Cat-ILD")
+        labels.append("ILD-genre")
 
     ax1.legend(
         lines,

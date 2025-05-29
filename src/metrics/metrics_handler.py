@@ -604,7 +604,7 @@ def _log_baseline_metrics(
     """Log baseline metrics for non-diversified rankings."""
     if use_category_ild:
         logger.info(
-            "Baseline (Non-diversified): NDCG@%d=%.4f, MRR@%d=%.4f, Emb-ILD@%d=%.4f, Cat-ILD@%d=%.4f",
+            "Baseline (Non-diversified): NDCG@%d=%.4f, MRR@%d=%.4f, ILD-sem@%d=%.4f, ILD-genre@%d=%.4f",
             top_k,
             baseline_ndcg,
             top_k,
@@ -616,7 +616,7 @@ def _log_baseline_metrics(
         )
     else:
         logger.info(
-            "Baseline (Non-diversified): NDCG@%d=%.4f, MRR@%d=%.4f, Emb-ILD@%d=%.4f",
+            "Baseline (Non-diversified): NDCG@%d=%.4f, MRR@%d=%.4f, ILD-sem@%d=%.4f",
             top_k,
             baseline_ndcg,
             top_k,
@@ -655,7 +655,7 @@ def _log_diversification_metrics(
 
     if use_category_ild:
         logger.info(
-            "%s=%.4f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, Emb-ILD@%d=%.4f (%.2f%%), Cat-ILD@%d=%.4f (%.2f%%)",
+            "%s=%.4f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, ILD-sem@%d=%.4f (%.2f%%), ILD-genre@%d=%.4f (%.2f%%)",
             param_name,
             param_value,
             top_k,
@@ -674,7 +674,7 @@ def _log_diversification_metrics(
         )
     else:
         logger.info(
-            "%s=%.4f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, Emb-ILD@%d=%.4f (%.2f%%)",
+            "%s=%.4f: NDCG@%d=%.4f (%.2f%%), MRR@%d=%.4f, ILD-sem@%d=%.4f (%.2f%%)",
             param_name,
             param_value,
             top_k,
@@ -701,7 +701,7 @@ def _log_early_stopping_message(
     last_result = results[-1]
     if use_category_ild:
         logger.warning(
-            "Stopping: NDCG dropped by %.4f%%. NDCG: %.4f, MRR before drop: %.4f, Emb-ILD before drop: %.4f, Cat-ILD before drop: %.4f",
+            "Stopping: NDCG dropped by %.4f%%. NDCG: %.4f, MRR before drop: %.4f, ILD-sem before drop: %.4f, ILD-genre before drop: %.4f",
             ndcg_drop,
             last_result["ndcg"],
             last_result["mrr"],
@@ -710,7 +710,7 @@ def _log_early_stopping_message(
         )
     else:
         logger.warning(
-            "Stopping: NDCG dropped by %.4f%%. MRR before drop: %.4f, Emb-ILD before drop: %.4f",
+            "Stopping: NDCG dropped by %.4f%%. MRR before drop: %.4f, ILD-sem before drop: %.4f",
             ndcg_drop,
             last_result["mrr"],
             last_result["emb_ild"],
