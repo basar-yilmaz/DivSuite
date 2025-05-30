@@ -1,6 +1,7 @@
 """Module for handling diversification experiment pipeline."""
 
 import time
+import gc  # Added for garbage collection
 
 from src.data.data_loader import load_experiment_data
 from src.metrics.metrics_handler import (
@@ -68,6 +69,41 @@ def run_diversification_pipeline(config: dict) -> None:
         embedding_params=embedding_params,
         item_id_mapping=item_id_mapping,
     )
+
+    if (
+        not embedding_params.get("use_precomputed_embeddings", False)
+        and embedder is not None
+        and hasattr(embedder, "model")
+        and embedder.model is not None
+    ):
+        logger.info("Releasing embedder model resources to free up memory...")
+        try:
+            # For STEmbedder, stop multiprocessing pool if it exists and is managed by the embedder instance
+            if hasattr(embedder, "pool") and embedder.pool is not None:
+                if hasattr(embedder.model, "stop_multi_process_pool"):
+                    embedder.model.stop_multi_process_pool(embedder.pool)
+                embedder.pool = None
+
+            del embedder.model
+            embedder.model = None
+
+            logger.info("Embedder model resources released.")
+        except Exception as e:
+            logger.warning(f"Could not fully release embedder resources: {e}")
+        finally:
+            gc.collect()
+            try:
+                import torch
+
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    logger.info("Called torch.cuda.empty_cache().")
+            except ImportError:
+                logger.debug(
+                    "torch module not found, skipping torch.cuda.empty_cache()."
+                )
+            except Exception as e:
+                logger.warning(f"Error during torch.cuda.empty_cache(): {e}")
 
     start_time = time.time()
     results, total_settings_tested = run_diversification_loop(

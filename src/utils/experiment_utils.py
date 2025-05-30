@@ -167,6 +167,10 @@ def initialize_embedder(config: dict, embedding_params: dict) -> STEmbedder:
         logger.info("Using precomputed embeddings. Embedder not initialized.")
         return None
 
+    if config["similarity"]["use_similarity_scores"]:
+        logger.info("Using similarity scores. Embedder not initialized.")
+        return None
+
     # If use_precomputed_embeddings is false, we need to initialize the embedder.
     embedder = STEmbedder(
         model_name=config["embedder"]["model_name"],

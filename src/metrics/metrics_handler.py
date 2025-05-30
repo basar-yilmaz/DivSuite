@@ -1,6 +1,7 @@
 """Module for handling metric computation and diversification."""
 
 from typing import Any
+from multiprocessing import Pool, cpu_count
 
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
@@ -439,15 +440,64 @@ def run_diversification_loop(
     return actual_results, num_settings_tested
 
 
+# Helper function for multiprocessing in _run_diversification
+# This function must be defined at the top level of the module to be picklable.
+def _diversify_single_user_task(
+    user_id: int,
+    titles: list[str],
+    relevance_scores: list[float],
+    diversifier_instance: Any,  # This is the configured diversifier for the current param_value
+    top_k_value: int,
+    user_title_to_embedding_map: dict[str, np.ndarray]
+    | None,  # Full precomputed_embeddings or subset
+    user_similarity_matrix: np.ndarray | None,
+) -> tuple[int, tuple[list[str], list[float]]]:
+    """Performs diversification for a single user; designed for multiprocessing."""
+    if len(titles) != len(relevance_scores):
+        # It's better to log or handle this error appropriately if it occurs in a worker
+        # For now, we'll raise it, but in a real scenario, you might return an error marker
+        raise ValueError(
+            f"User {user_id}: Number of titles and relevance scores do not match in worker."
+        )
+    items = np.array(
+        [
+            [i, title, float(score)]
+            for i, (title, score) in enumerate(
+                zip(titles, relevance_scores, strict=False)
+            )
+        ],
+        dtype=object,
+    )
+
+    diversify_kwargs = {
+        "top_k": top_k_value,
+        "precomputed_sim_matrix": user_similarity_matrix,
+    }
+
+    # Check if the diversifier expects precomputed embeddings or uses similarity scores from file
+    use_similarity_scores_attr = getattr(
+        diversifier_instance, "use_similarity_scores", False
+    )
+    if not use_similarity_scores_attr:
+        diversify_kwargs["title2embedding"] = user_title_to_embedding_map
+
+    diversified_items_array = diversifier_instance.diversify(items, **diversify_kwargs)
+
+    return user_id, (
+        diversified_items_array[:, 1].tolist(),
+        [float(x) for x in diversified_items_array[:, 2]],
+    )
+
+
 def _run_diversification(
     rankings: dict[int, tuple[list[str], list[float]]],
-    diversifier: Any,
+    diversifier: Any,  # This is the configured diversifier for the current param_value
     top_k: int = 10,
     precomputed_embeddings: dict[str, np.ndarray] | None = None,
     precomputed_similarity_matrices: dict[int, np.ndarray] | None = None,
 ) -> dict[int, tuple[list[str], list[float]]]:
     """
-    Apply diversification to recommendation lists.
+    Apply diversification to recommendation lists using multiprocessing.
 
     Args:
         rankings: User rankings dictionary.
@@ -459,58 +509,60 @@ def _run_diversification(
     Returns:
         dict: Diversified rankings dictionary.
     """
-    diversified_dict = {}
-
-    # Check if the diversifier expects precomputed embeddings or uses similarity scores
-    # This affects what we pass to its diversify method
-    use_similarity_scores = getattr(diversifier, "use_similarity_scores", False)
-
-    title2embedding = None
-    if not use_similarity_scores:
-        title2embedding = precomputed_embeddings
+    tasks = []
+    use_similarity_scores_globally = getattr(
+        diversifier, "use_similarity_scores", False
+    )
 
     for user_id, (titles, relevance_scores) in rankings.items():
-        if len(titles) != len(relevance_scores):
-            raise ValueError(
-                f"User {user_id}: Number of titles and relevance scores do not match."
-            )
-        items = np.array(
-            [
-                [i, title, float(score)]
-                for i, (title, score) in enumerate(
-                    zip(titles, relevance_scores, strict=False)
-                )
-            ],
-            dtype=object,
-        )
-
-        # Get precomputed similarity matrix for this user
-        sim_matrix = (
-            precomputed_similarity_matrices.get(user_id)
+        user_sim_matrix = (
+            precomputed_similarity_matrices.get(
+                user_id
+            )  # Already precomputed for each user
             if precomputed_similarity_matrices
             else None
         )
-        if sim_matrix is None:
-            # This shouldn't happen if precomputation was done correctly, but handle defensively
-            logger.warning(f"Missing precomputed similarity matrix for user {user_id}")
-            # Fallback or raise error? For now, let diversify handle it (it might recompute)
-            pass
 
-        # Pass the precomputed matrix and potentially embeddings to the diversify method
-        diversify_kwargs = {
-            "top_k": top_k,
-            "precomputed_sim_matrix": sim_matrix,
-        }
-        if not use_similarity_scores:
-            diversify_kwargs["title2embedding"] = title2embedding
+        # title2embedding will be passed if not using global similarity scores
+        # The diversifier.diversify method itself should handle title2embedding properly
+        # based on its internal logic and whether precomputed_sim_matrix is also provided.
+        user_title_to_embedding_map = None
+        if not use_similarity_scores_globally:
+            user_title_to_embedding_map = precomputed_embeddings
 
-        diversified_items = diversifier.diversify(items, **diversify_kwargs)
-
-        diversified_dict[user_id] = (
-            diversified_items[:, 1].tolist(),
-            [float(x) for x in diversified_items[:, 2]],
+        tasks.append(
+            (
+                user_id,
+                titles,
+                relevance_scores,
+                diversifier,
+                top_k,
+                user_title_to_embedding_map,
+                user_sim_matrix,
+            )
         )
 
+    diversified_dict = {}
+    num_processes = max(1, cpu_count() // 16)
+
+    if not tasks:
+        return {}
+
+    logger.info(
+        f"Starting diversification for {len(tasks)} users with {num_processes} processes..."
+    )
+
+    with Pool(processes=num_processes) as pool:
+        try:
+            results_list = pool.starmap(_diversify_single_user_task, tasks)
+        except Exception as e:
+            logger.error(f"Multiprocessing diversification failed: {e}")
+            raise
+
+    for user_id, diversified_data in results_list:
+        diversified_dict[user_id] = diversified_data
+
+    # logger.info("Diversification for all users completed.")
     return diversified_dict
 
 
